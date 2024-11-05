@@ -34,8 +34,8 @@ else:
 
 NSE_base_url = os.getenv('NSE_base_url')
 bhav_copy_archive_path = os.getenv("bhav_copy_archive_path")
-NSE_all_stocks_prices_data = os.getenv("NSE_PRICE")
-NSE_all_stocks_volumes_data = os.getenv("NSE_VOLUME")
+NSE_all_stocks_prices_data = os.getenv("NSE_PRICE_DATA")
+NSE_all_stocks_volumes_data = os.getenv("NSE_VOLUME_DATA")
 INDEX_LIST = os.getenv('INDEX_LIST').split(',')
 environment = os.getenv('APP_ENV', 'DEBUG')
 
@@ -121,6 +121,7 @@ def create_or_add_data_to_price_master_data(filepath, date):
         nse_data.to_csv(path_or_buf=NSE_all_stocks_prices_data, index=False)
     return True
 
+
 def create_or_add_data_to_volume_master_data(filepath, date):
     df = pd.read_csv(filepath)
 
@@ -178,6 +179,7 @@ def create_or_add_data_to_volume_master_data(filepath, date):
         nse_data.to_csv(path_or_buf=NSE_all_stocks_volumes_data, index=False)
     return True
 
+
 def update_index_constituents_data(data, date, data_type):
     filepaths = [f'{index}_{data_type}_DATA.csv' for index in INDEX_LIST]
     date = pd.to_datetime(date)
@@ -187,6 +189,7 @@ def update_index_constituents_data(data, date, data_type):
         data = data.loc[data['Date'] == date, df_col]
         df = pd.concat([df, data], ignore_index=True)
         df.to_csv(filepath)
+
 
 def get_bhav_copy(day = "05", month = "12", year = "2019"):
 
@@ -247,11 +250,9 @@ def get_bhav_copy(day = "05", month = "12", year = "2019"):
 
 
 def scrap_data():
-    # start_year = 2024
-    # start_month = 10
-    # start_day = 25
-    # all_valid_dates = get_valid_dates(start_year, start_month, start_day)
-    all_valid_dates = [datetime.now().date().isoformat()]
+    # all_valid_dates = [datetime.now().date().isoformat()]
+    all_valid_dates = [(datetime.now() - timedelta(days=1)).date().isoformat()]
+    print(all_valid_dates)
     for date in all_valid_dates:
         logger.info(f"Processing date: {date}")
         bhav_copy_logger.info(f"Processing date: {date}")

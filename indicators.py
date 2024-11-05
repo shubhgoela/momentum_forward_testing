@@ -44,7 +44,7 @@ def calculate_ema(data: pd.DataFrame, dates: pd.Series , timeframe=200):
     return df
 
 
-def calculate_ttm(data: pd.DataFrame, dates: pd.Series, start_year = 2010, start_month = 1, lookback_months = 12):
+def calculate_ttm(data: pd.DataFrame, dates: pd.Series, year = 2010, month = 1, lookback_months = 12):
     '''
     This function used to calculate ttm returns.
 
@@ -55,63 +55,52 @@ def calculate_ttm(data: pd.DataFrame, dates: pd.Series, start_year = 2010, start
 
     '''
     dates_sorted = dates.sort_values(ascending=True)
-    end_year = dates_sorted.iloc[-1].year
-    end_month = dates_sorted.iloc[-1].month
     # print('end_year: ',end_year)
     # print('end_month: ',end_month)
     ttm_return = []
 
-    for year in range(start_year, end_year + 1):
-        if year == start_year:
-            month_range = range(start_month, 13)
-        else:
-            month_range = range(1,13)
-        for month in month_range:
-            if year == end_year and month > end_month:
-                break
-            
-            row_item = {}
-            start_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(months=lookback_months)
-            end_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(days=1)
-            
-            filtered_dates = dates_sorted[(dates_sorted >= start_date) & (dates_sorted <= end_date)]
-            if filtered_dates.empty:
-                continue
+    row_item = {}
+    start_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(months=lookback_months)
+    end_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(days=1)
+    
+    filtered_dates = dates_sorted[(dates_sorted >= start_date) & (dates_sorted <= end_date)]
+    if filtered_dates.empty:
+        return Exception(f'No dates for TTM. Year: {year}, Month: {month}')
 
-            first_trading_date = filtered_dates.iloc[0]
-            last_trading_date = filtered_dates.iloc[-1]
+    first_trading_date = filtered_dates.iloc[0]
+    last_trading_date = filtered_dates.iloc[-1]
+    
+    # print('year: ',year)
+    # print('month: ',month)
+    # print('start_date: ', start_date)
+    # print('end_date: ',end_date)
+    # print('first_trading_date: ',first_trading_date)
+    # print('last_trading_date: ',last_trading_date)
+
+    row_item['Date'] = datetime(year=year, month=month, day=1)
+    for stock in data.columns[1:]:
+        try:
+            opening_price = data.loc[data['Date'] == first_trading_date, stock].values[0]
+            closing_price = data.loc[data['Date'] == last_trading_date, stock].values[0]
             
-            # print('year: ',year)
-            # print('month: ',month)
-            # print('start_date: ', start_date)
-            # print('end_date: ',end_date)
-            # print('first_trading_date: ',first_trading_date)
-            # print('last_trading_date: ',last_trading_date)
+            if pd.isna(opening_price) or pd.isna(closing_price) or opening_price == 0 or closing_price == 0:
+                perc_change = 0
+            else:
+                perc_change = round(((closing_price / opening_price) - 1)*100,2)
 
-            row_item['Date'] = datetime(year=year, month=month, day=1)
-            for stock in data.columns[1:]:
-                try:
-                    opening_price = data.loc[data['Date'] == first_trading_date, stock].values[0]
-                    closing_price = data.loc[data['Date'] == last_trading_date, stock].values[0]
-                    
-                    if pd.isna(opening_price) or pd.isna(closing_price) or opening_price == 0 or closing_price == 0:
-                        perc_change = 0
-                    else:
-                        perc_change = round(((closing_price / opening_price) - 1)*100,2)
-
-                except IndexError:
-                    perc_change = 0
-                    pass
-                except Exception as e:
-                    print("stock name: ",stock)
-                    print("first_trading_date: ",first_trading_date)
-                    print("last_trading_date: ",last_trading_date)
-                    print('open_price: ',opening_price)
-                    print('closing_price: ',closing_price)
-                    raise Exception(e)
-                
-                row_item[stock] = perc_change
-            ttm_return.append(row_item)
+        except IndexError:
+            perc_change = 0
+            pass
+        except Exception as e:
+            print("stock name: ",stock)
+            print("first_trading_date: ",first_trading_date)
+            print("last_trading_date: ",last_trading_date)
+            print('open_price: ',opening_price)
+            print('closing_price: ',closing_price)
+            raise Exception(e)
+        
+        row_item[stock] = perc_change
+    ttm_return.append(row_item)
     
     ttm_return_df = pd.DataFrame(ttm_return)
     return ttm_return_df
@@ -176,7 +165,7 @@ def calculate_m_score(ttm, daily_change, lookback_months=12, absolute = False):
     return pd.DataFrame(m_scores)
 
 
-def price_above_ema(data, volumes, ema_list, stock,  first_trading_date, last_trading_date, roll_over_trading_date):
+def price_above_ema(data, volumes, ema_list, stock, roll_over_trading_date):
     for ema in ema_list:
 
         if roll_over_trading_date in data['Date'].values and roll_over_trading_date in ema['Date'].values:
@@ -190,19 +179,15 @@ def price_above_ema(data, volumes, ema_list, stock,  first_trading_date, last_tr
     return True
 
 
-def price_above_52WKH(data, volumes, ema, stock,  first_trading_date, last_trading_date, roll_over_trading_date):
+def price_above_52WKH(data, volumes, ema, stock, roll_over_trading_date):
     
     return data[data['Date'] == roll_over_trading_date][stock].iloc[0] > (data[(data['Date'] <= roll_over_trading_date)].tail(250)[stock].max() * 0.7)
 
 
-def volume_check(data, volumes, ema, stock, first_trading_date, last_trading_date, roll_over_trading_date, min_volume = 10000000):
+def volume_check(data, volumes, ema, stock, roll_over_trading_date, min_volume = 10000000):
 
     month = pd.to_datetime(roll_over_trading_date).month
     year = pd.to_datetime(roll_over_trading_date).year
-
-    if (first_trading_date == roll_over_trading_date):
-        month = 12
-        year = year - 1
 
     month_data = data[(data['Date'].dt.month == month) & (data['Date'].dt.year == year)]
     month_volumes = volumes[(volumes['Date'].dt.month == month) & (volumes['Date'].dt.year == year)]
