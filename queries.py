@@ -42,3 +42,30 @@ def update_index_constituents(index, update):
             {"$set": update}
         )
     return True
+
+def get_adjusted_corp_actions(date):
+    data = db['corp_action_adjusted'].find_one({'date': date})
+    return data
+
+def add_holiday_to_year(date):
+    if isinstance(date, list):
+        data = db['collection_holidays'].find_one_and_update({"year": date[0].year},  
+                                                             {"$push": {"dates": {"$each": date}},
+                                                             "$set": {'updated_on': datetime.now()}},
+                                                             upsert=True,
+                                                             return_document=True
+                                                             )
+    else:
+        data = db['collection_holidays'].find_one_and_update({"year": date.year},  
+                                                            {"$push": {"dates": date}, 
+                                                            "$set": {'updated_on': datetime.now()}},
+                                                            upsert=True,
+                                                            return_document=True
+                                                            )
+    return data
+
+
+
+def get_holidays_for_year(year):
+        data = db['collection_holidays'].find_one({'year': year})
+        return data

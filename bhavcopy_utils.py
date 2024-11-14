@@ -12,63 +12,10 @@ import zipfile
 import io
 import xml.etree.ElementTree as ET
 
-month_abbreviations = {
-        1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
-        7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
-    }
 
-abbreviation_to_month = {
-    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11,'Dec': 12
-    }
+from utils import month_abbreviations, abbreviation_to_month
+from queries import get_holidays_for_year
 
-holiday_strings = [
-
-    
-    # 2019
-    'Monday, 04 March 2019', 'Thursday, 21 March 2019', 'Wednesday, 17 April 2019',
-    'Friday, 19 April 2019', 'Monday, 29 April 2019', 'Wednesday, 01 May 2019',
-    'Wednesday, 05 June 2019', 'Monday, 12 August 2019', 'Thursday, 15 August 2019',
-    'Monday, 02 September 2019', 'Tuesday, 10 September 2019', 'Wednesday, 02 October 2019',
-    'Tuesday, 08 October 2019', 'Monday, 21 October 2019', 'Monday, 28 October 2019',
-    'Tuesday, 12 November 2019', 'Wednesday, 25 December 2019',
-
-    # 2020
-    'Friday, 21 February 2020', 'Tuesday, 10 March 2020', 'Sunday, 29 March 2020',
-    'Thursday, 02 April 2020', 'Monday, 06 April 2020', 'Friday, 10 April 2020',
-    'Tuesday, 14 April 2020', 'Friday, 01 May 2020', 'Monday, 25 May 2020',
-    'Friday, 02 October 2020', 'Monday, 16 November 2020', 'Monday, 30 November 2020',
-    'Friday, 25 December 2020',
-
-    # 2021
-    'Tuesday, 26 January 2021', 'Thursday, 11 March 2021', 'Friday, 02 April 2021',
-    'Wednesday, 14 April 2021', 'Wednesday, 21 April 2021', 'Thursday, 13 May 2021',
-    'Wednesday, 21 July 2021', 'Thursday, 19 August 2021', 'Friday, 10 September 2021',
-    'Friday, 15 October 2021', 'Thursday, 04 November 2021', 'Friday, 05 November 2021',
-    'Friday, 19 November 2021',
-
-    # 2022
-    'Wednesday, 26 January 2022', 'Tuesday, 01 March 2022', 'Friday, 18 March 2022',
-    'Thursday, 14 April 2022', 'Friday, 15 April 2022', 'Tuesday, 03 May 2022',
-    'Tuesday, 09 August 2022', 'Monday, 15 August 2022', 'Wednesday, 31 August 2022',
-    'Wednesday, 05 October 2022', 'Monday, 24 October 2022', 'Wednesday, 26 October 2022',
-    'Tuesday, 08 November 2022',
-
-    # 2023
-    'Thursday, 26 January 2023', 'Tuesday, 07 March 2023', 'Thursday, 30 March 2023',
-    'Tuesday, 04 April 2023', 'Friday, 07 April 2023', 'Friday, 14 April 2023',
-    'Monday, 01 May 2023', 'Thursday, 29 June 2023', 'Tuesday, 15 August 2023',
-    'Tuesday, 19 September 2023', 'Monday, 02 October 2023', 'Tuesday, 24 October 2023',
-    'Tuesday, 14 November 2023', 'Monday, 27 November 2023', 'Monday, 25 December 2023',
-
-    # 2024
-    'Monday, 22 January 2024', 'Friday, 26 January 2024', 'Friday, 08 March 2024',
-    'Monday, 25 March 2024', 'Friday, 29 March 2024', 'Thursday, 11 April 2024',
-    'Wednesday, 17 April 2024', 'Wednesday, 01 May 2024', 'Monday, 20 May 2024',
-    'Monday, 17 June 2024', 'Wednesday, 17 July 2024', 'Thursday, 15 August 2024',
-    'Wednesday, 02 October 2024', 'Friday, 01 November 2024', 'Friday, 15 November 2024',
-    'Wednesday, 25 December 2024'
-]
 
 def file_exists(filepath):
     return Path(filepath).is_file()
@@ -211,3 +158,81 @@ def save_to_archive(bhav_copy_archive_path, text, filename):
     file_path = bhav_copy_archive_path + filename
     text.to_csv(file_path)
     return file_path
+
+def check_date_in_csv(file_path, date_to_check):
+    """
+    Reads a CSV file with a 'Date' column and checks if a specific date is present in that column.
+
+    Parameters:
+    file_path (str): The path to the CSV file.
+    date_to_check (str): The date to check in the format 'YYYY-MM-DD'.
+
+    Returns:
+    bool: True if the date is present, False otherwise.
+    """
+    # Read the CSV file
+    try:
+        df = pd.read_csv(file_path, parse_dates=['Date'])
+    except FileNotFoundError:
+        print("The file was not found.")
+        return False
+    except ValueError:
+        print("Ensure there is a 'Date' column in the CSV.")
+        return False
+    
+    # Check if the date is in the 'Date' column
+    return pd.to_datetime(date_to_check) in df['Date'].values
+
+def check_date_in_bhavcopy(data, date_to_check):
+    """
+    Reads a BhavCopy file with a ' DATE1' column and checks if a specific date is present in that column.
+
+    Parameters:
+    data (pd.DataFrame): The dataframe to check.
+    date_to_check (str): The date to check in the format 'YYYY-MM-DD'.
+
+    Returns:
+    bool: True if the date is present, False otherwise.
+    """
+    # Read the CSV file
+    try:
+        if isinstance(data, str):
+            data = pd.read_csv(data)
+
+        dates = pd.to_datetime(data[' DATE1'])
+
+    except FileNotFoundError:
+        print("The file was not found.")
+        return False
+    except ValueError:
+        print("Ensure there is a 'Date' column in the CSV.")
+        return False
+    
+    # Check if the date is in the 'Date' column
+    return pd.to_datetime(date_to_check) in dates.values
+
+
+def is_valid_date(date_to_check):
+    """
+    Checks if a given date is valid (i.e., it's a weekday and not a holiday).
+
+    Parameters:
+    date_to_check (str): The date to check in the format 'YYYY-MM-DD'.
+    holiday_strings (list): A list of holiday dates as strings in the format 'A, %d %B %Y'.
+
+    Returns:
+    bool: True if the date is a valid trading date, False otherwise.
+    """
+    # Convert the date_to_check to a date object
+    date = date_to_check.date()
+    holiday_dates = get_holidays_for_year(date.year)
+    if holiday_dates is None:
+        holiday_dates = []
+    else:
+        holiday_dates = holiday_dates['dates']
+
+    # Check if the date is a weekday and not a holiday
+    is_weekday = calendar.day_abbr[date.weekday()] not in ['Sat', 'Sun']
+    is_a_holiday =  any(d.date() == date for d in holiday_dates)
+
+    return is_weekday and not is_a_holiday

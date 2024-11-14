@@ -19,6 +19,11 @@ month_abbreviations = {
         7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
     }
 
+abbreviation_to_month = {
+    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11,'Dec': 12
+    }
+
 TOP_N_STOCKS = {
     'NIFTY_500': 20,
     'NIFTY_200': 20,

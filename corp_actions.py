@@ -6,7 +6,7 @@ import pandas as pd
 
 from NSE_Selenium_login import get_data_with_selenium_nse_api
 
-from queries import save_corp_action, save_all_corp_action
+from queries import save_corp_action, save_all_corp_action, get_adjusted_corp_actions
 
 dotenv_path = find_dotenv()
 
@@ -90,26 +90,30 @@ def filter_and_enrich_json(json_data):
     return enriched_data, dates
 
 
-def get_corp_actions():
-    # date = datetime.now().date().strftime('%d-%m-%Y')
-    date = (datetime.now() - timedelta(days=1)).date().strftime('%d-%m-%Y')
-    print(date)
-    endpoint = f'/api/corporates-corporateActions?index=equities&from_date={date}&to_date={date}'
-    all_corp_actions = get_data_with_selenium_nse_api(NSE_base_url, endpoint)
-    corp_actions, dates = filter_and_enrich_json(all_corp_actions)
-    all_corp_actions = {
-        'created_on': datetime.now(),
-        'Date': datetime.strptime(date, '%d-%m-%Y'),
-        'actions': all_corp_actions
-    }
+def get_corp_actions(date = datetime.now()):
+    try:
+        date = date.date().strftime('%d-%m-%Y')
+        print(date)
+        endpoint = f'/api/corporates-corporateActions?index=equities&from_date={date}&to_date={date}'
+        all_corp_actions = get_data_with_selenium_nse_api(NSE_base_url, endpoint)
+        corp_actions, dates = filter_and_enrich_json(all_corp_actions)
+        all_corp_actions = {
+            'created_on': datetime.now(),
+            'date': datetime.strptime(date, '%d-%m-%Y'),
+            'actions': all_corp_actions
+        }
 
-    corp_actions = {
-        'created_on': datetime.now(),
-        'Date': datetime.strptime(date, '%d-%m-%Y'),
-        'actions': corp_actions
-    }
+        corp_actions = {
+            'created_on': datetime.now(),
+            'date': datetime.strptime(date, '%d-%m-%Y'),
+            'actions': corp_actions
+        }
 
-    return all_corp_actions, corp_actions
+        return all_corp_actions, corp_actions
+    except Exception as e:
+        print('####Exception')
+        print(e)
+        return None, None
 
 
 def adjust_price_and_volumes(corp_actions):
@@ -137,16 +141,22 @@ def adjust_price_and_volumes(corp_actions):
     except Exception as e:
         print(str(e))
            
-def adjust_corp_actions():
-    all_corp_actions, corp_actions = get_corp_actions()
-    save_all_corp_action(all_corp_actions)
-    save_corp_action(corp_actions)
+def adjust_corp_actions(date = datetime.now()):
 
+    adjusted_actions = get_adjusted_corp_actions(date)
+
+    if adjusted_actions is not None:
+        print('Corp actions already adjusted.')
+        return True
+    
+    all_corp_actions, corp_actions = get_corp_actions(date)
+    save_all_corp_action(all_corp_actions)
+    print(len(corp_actions['actions']))
     if len(corp_actions['actions']) > 0:
         adjust_price_and_volumes(corp_actions)
+        save_corp_action(corp_actions)
     else:
         print('No corporate actions found')
 
     return True
 
-adjust_corp_actions()

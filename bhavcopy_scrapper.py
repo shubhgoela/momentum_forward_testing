@@ -18,9 +18,10 @@ import xml.etree.ElementTree as ET
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from bhavcopy_utils import (month_abbreviations, holiday_strings,
-                   get_valid_dates, handle_bhav_copy_response, 
-                   file_exists, save_to_archive)
+from bhavcopy_utils import(get_valid_dates, handle_bhav_copy_response, 
+                           file_exists, save_to_archive, check_date_in_csv, check_date_in_bhavcopy)
+
+from utils import month_abbreviations, abbreviation_to_month
 from logging_config import setup_logging
 from bhavcopy_login import login
 
@@ -249,38 +250,51 @@ def get_bhav_copy(day = "05", month = "12", year = "2019"):
         return None
 
 
-def scrap_data():
+def scrap_data(date = datetime.now()):
     # all_valid_dates = [datetime.now().date().isoformat()]
-    all_valid_dates = [(datetime.now() - timedelta(days=1)).date().isoformat()]
-    print(all_valid_dates)
-    for date in all_valid_dates:
-        logger.info(f"Processing date: {date}")
-        bhav_copy_logger.info(f"Processing date: {date}")
-        print(f"Processing date: {date}")
-        year, month, day = date.split("-")
-        month = month_abbreviations[int(month)]
-        file_name = f"Bhav_Copy_{day}-{month}-{year}.csv"
-        file_exist = file_exists(bhav_copy_archive_path+file_name)
-        print("file exist: ", file_exist)
-        filepath = None
-        if not file_exist:
-            data = get_bhav_copy(day, month, year)
-            if isinstance(data, pd.DataFrame):
+    date = date.date().isoformat()
+    logger.info(f"Processing date: {date}")
+    bhav_copy_logger.info(f"Processing date: {date}")
+    print(f"Processing date: {date}")
+    year, month, day = date.split("-")
+    month = month_abbreviations[int(month)]
+    file_name = f"Bhav_Copy_{day}-{month}-{year}.csv"
+    file_exist = file_exists(bhav_copy_archive_path+file_name)
+    print("file exist: ", file_exist)
+    filepath = None
+    if not file_exist:
+        data = get_bhav_copy(day, month, year)
+        if isinstance(data, pd.DataFrame):
+            date_match = check_date_in_bhavcopy(data, date)
+            if date_match:
                 filepath = save_to_archive(bhav_copy_archive_path, data, file_name)
+                data_in_price = False
+                data_in_volume = False
             else:
-                bhav_copy_logger.warning(f"Not a DataFrame object for date - {date}")
+                bhav_copy_logger.warning(f"Date mismatch ain bhavcopy and current date for date - {date}")
         else:
-            filepath = bhav_copy_archive_path+file_name
+            bhav_copy_logger.warning(f"Not a DataFrame object for date - {date}")
+    else:
+        data_in_price = check_date_in_csv(NSE_all_stocks_prices_data, date)
+        data_in_volume = check_date_in_csv(NSE_all_stocks_volumes_data, date)
+        filepath = bhav_copy_archive_path+file_name
+        date_match = check_date_in_bhavcopy(filepath, date)
+        if not date_match:
+            filepath = None
 
-        if filepath:
+    if filepath:
+
+        if not data_in_price:
             create_or_add_data_to_price_master_data(filepath, date)
+
+        if not data_in_volume:
             create_or_add_data_to_volume_master_data(filepath, date)
-            
-        if not file_exist:
-            sleep_time = random.uniform(10, 30)
-            print("sleeping for: ",sleep_time)
-            time.sleep(sleep_time)
+        
+    if not file_exist:
+        sleep_time = random.uniform(10, 30)
+        print("sleeping for: ",sleep_time)
+        time.sleep(sleep_time)
 
     return True
 
-scrap_data()
+# scrap_data(datetime(day=4, month=11, year=2024))
