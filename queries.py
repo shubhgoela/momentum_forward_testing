@@ -65,7 +65,10 @@ def add_holiday_to_year(date):
     return data
 
 
-
 def get_holidays_for_year(year):
-        data = db['collection_holidays'].find_one({'year': year})
-        return data
+    data = db['collection_holidays'].find_one({'year': year})
+    return data
+
+def get_mail_template(template_name):
+    data = db['collection_mail_templates'].find_one({'template_name': template_name})
+    return data

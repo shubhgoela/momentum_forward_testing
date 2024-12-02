@@ -34,24 +34,34 @@ def get_data_with_selenium_nse_api(base_url, api_endpoint, use_undetected=False,
                 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             
             driver.get(base_url)
-            WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            
-            # Scroll to trigger any lazy-loading
+
+            time.sleep(10)
+
+             # Scroll to trigger any lazy-loading
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
             driver.execute_script("window.scrollTo(0, 0);")
+
+            WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             
             # Navigate to the API URL
             api_url = base_url+api_endpoint
             driver.get(api_url)
             
             # Wait for the content to load
+            page_source = driver.page_source
+            # print(page_source)
             wait = WebDriverWait(driver, 60)
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(2)
+            driver.execute_script("window.scrollTo(0, 0);")
             content = wait.until(EC.presence_of_element_located((By.TAG_NAME, "pre")))
-            
+            # content = driver.execute_script("return document.querySelector('pre').textContent;")
             # Try to parse the content as JSON
             try:
                 data = json.loads(content.text)
+                if driver:
+                    driver.quit()
                 return data  # Return formatted JSON string
             except json.JSONDecodeError:
                 logger.warning("Content is not valid JSON. Returning raw text.")

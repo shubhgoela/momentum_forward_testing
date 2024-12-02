@@ -11,11 +11,25 @@ from urllib3.util.retry import Retry
 import zipfile
 import io
 import xml.etree.ElementTree as ET
-
+from email.message import EmailMessage
+import mimetypes
+import smtplib
+from dotenv import find_dotenv, load_dotenv
 
 from utils import month_abbreviations, abbreviation_to_month
 from queries import get_holidays_for_year
 
+dotenv_path = find_dotenv()
+
+if dotenv_path:
+    load_dotenv(dotenv_path=dotenv_path, override=True)
+else:
+    print("No .env file found")
+
+SENDER_EMAIL = os.getenv('SENDER_EMAIL')
+SENDER_PASSWORD = os.getenv('SENDER_PASSWORD')
+SMTP_SERVER = os.getenv('SMTP_SERVER')
+SMTP_PORT = int(os.getenv('SMTP_PORT'))
 
 def file_exists(filepath):
     return Path(filepath).is_file()
@@ -236,3 +250,132 @@ def is_valid_date(date_to_check):
     is_a_holiday =  any(d.date() == date for d in holiday_dates)
 
     return is_weekday and not is_a_holiday
+
+def generate_html_table(template, data):
+    """
+    Generates an HTML table from a list of dictionaries, with support for clickable file download links.
+    
+    Parameters:
+        data (list[dict]): A list of dictionaries where each dictionary represents a row. 
+                           If a key is 'file_link', its value will be rendered as a clickable link.
+    
+    Returns:
+        str: The generated HTML table as a string.
+    """
+    if not data:
+        return "<p>No data available</p>"
+    
+    # Extract headers from the keys of the first dictionary
+    headers = data[0].keys()
+    
+    # Start building the HTML table
+    html = "<table border='1' style='border-collapse: collapse; width: 100%;'>"
+    
+    # Add table headers
+    html += "<thead><tr>"
+    for header in headers:
+        html += f"<th style='padding: 8px; text-align: left;'>{header}</th>"
+    html += "</tr></thead>"
+    
+    # Add table rows
+    html += "<tbody>"
+    for row in data:
+        html += "<tr>"
+        for header in headers:
+            value = row.get(header, "")
+            
+            # Handle 'file_link' key by creating a download link
+            if header == "file_link" and value:
+                value = f"<a href='{value}' target='_blank' style='color: blue; text-decoration: none;'>Click to download</a>"
+            
+            html += f"<td style='padding: 8px;'>{value}</td>"
+        html += "</tr>"
+    html += "</tbody>"
+    
+    html += "</table>"
+
+    if template is not None:
+        body = template.get('body'," {{table}} ")
+        body = body.replace("{{table}}", html)
+    else:
+        body = html
+        
+    return body
+
+
+def send_email(
+    recipient_emails, subject, body, 
+    html_body=None, cc_emails=None, bcc_emails=None, 
+    attachments=None, use_ssl=True
+):
+    """
+    Sends an email with optional CC, BCC, HTML body, and attachments.
+    
+    Parameters:
+        smtp_server (str): The SMTP server address.
+        port (int): The port to connect to the SMTP server.
+        sender_email (str): The sender's email address.
+        sender_password (str): The sender's email account password.
+        recipient_emails (list[str]): List of recipient email addresses.
+        subject (str): The subject of the email.
+        body (str): The plain text body content of the email.
+        html_body (str, optional): HTML version of the email content. Defaults to None.
+        cc_emails (list[str], optional): List of CC email addresses. Defaults to None.
+        bcc_emails (list[str], optional): List of BCC email addresses. Defaults to None.
+        attachments (list[str], optional): List of file paths to attach to the email. Defaults to None.
+        use_ssl (bool): Whether to use SSL for the SMTP connection. Defaults to True.
+    
+    Raises:
+        Exception: If the email fails to send for any reason.
+    """
+    try:
+        # Create the email message
+        msg = EmailMessage()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = ', '.join(recipient_emails)
+        msg['Subject'] = subject
+        
+        if cc_emails:
+            msg['Cc'] = ', '.join(cc_emails)
+        
+        # Email body: Add plain text and optional HTML content
+        if html_body:
+            msg.set_content(body)
+            msg.add_alternative(f"<p>{html_body}<p>", subtype='html')
+        else:
+            msg.set_content(body)
+        
+        # Attach files if provided
+        if attachments:
+            for file_path in attachments:
+                if os.path.exists(file_path):
+                    ctype, encoding = mimetypes.guess_type(file_path)
+                    ctype = ctype or 'application/octet-stream'
+                    maintype, subtype = ctype.split('/', 1)
+                    
+                    with open(file_path, 'rb') as file:
+                        file_data = file.read()
+                        file_name = os.path.basename(file_path)
+                        msg.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=file_name)
+                else:
+                    print(f"Warning: File not found: {file_path}")
+        
+        # Prepare recipient list (includes BCC for sending but not visible in email headers)
+        all_recipients = recipient_emails + (cc_emails or []) + (bcc_emails or [])
+        
+        # Connect to the SMTP server and send the email
+        if use_ssl:
+            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.send_message(msg, from_addr=SENDER_EMAIL, to_addrs=all_recipients)
+        else:
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                server.send_message(msg, from_addr=SENDER_EMAIL, to_addrs=all_recipients)
+        
+        print("Email sent successfully.")
+        return True
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        return False
