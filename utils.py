@@ -27,7 +27,9 @@ abbreviation_to_month = {
 TOP_N_STOCKS = {
     'NIFTY_500': 20,
     'NIFTY_200': 20,
-    'NIFTY_50': 10
+    'NIFTY_50': 10,
+    'MNCL': 20,
+    'DERIVATIVES': 20
 }
 
 holiday_strings = [
