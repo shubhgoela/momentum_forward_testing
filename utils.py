@@ -8,7 +8,7 @@ from dotenv import load_dotenv, find_dotenv
 import os
 import traceback
 
-from queries import get_index_constituents
+from queries import get_index_constituents, get_holidays_for_year, update_price_in_portfolio
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path=dotenv_path, override=True)
@@ -29,18 +29,10 @@ TOP_N_STOCKS = {
     'NIFTY_200': 20,
     'NIFTY_50': 10,
     'MNCL': 20,
-    'DERIVATIVES': 20
+    'NIFTY_NEXT_50': 20,
+    'DERIVATIVES': 20,
+    'NSE': 50
 }
-
-holiday_strings = [
-    # 2024
-    'Monday, 22 January 2024', 'Friday, 26 January 2024', 'Friday, 08 March 2024',
-    'Monday, 25 March 2024', 'Friday, 29 March 2024', 'Thursday, 11 April 2024',
-    'Wednesday, 17 April 2024', 'Wednesday, 01 May 2024', 'Monday, 20 May 2024',
-    'Monday, 17 June 2024', 'Wednesday, 17 July 2024', 'Thursday, 15 August 2024',
-    'Wednesday, 02 October 2024', 'Friday, 01 November 2024', 'Friday, 15 November 2024',
-    'Wednesday, 25 December 2024'
-]
 
 def load_and_set_data(file_path, data_type='PRICE'):
     '''
@@ -230,27 +222,21 @@ def filter_dates_by_month(dates_sorted, start_date, end_date):
     return dates_sorted[(dates_sorted >= start_date) & (dates_sorted <= end_date)]
 
 
-# def get_trading_dates(dates_sorted, year, month, monthly_returns):
-#     filtered_dates = filter_dates_by_month(dates_sorted, *get_period_dates(year, month))
-#     first_trading_date = filtered_dates.iloc[0]
-    
-#     if monthly_returns is None:
-#         roll_over_trading_date = first_trading_date
-#     else:
-#         temp_start_date, temp_end_date = get_period_dates(year-1 if month == 1 else year, 12 if month == 1 else month-1)
-#         temp_filtered_dates = filter_dates_by_month(dates_sorted, temp_start_date, temp_end_date)
-#         roll_over_trading_date = temp_filtered_dates.iloc[-1]
-
-#     return first_trading_date, roll_over_trading_date
-
 def get_first_trading_date(year, month):
-    holiday_dates = [datetime.strptime(date, '%A, %d %B %Y').date() for date in holiday_strings]
+
+    holiday_dates = get_holidays_for_year(year)
+    if holiday_dates is None:
+        holiday_dates = []
+    else:
+        holiday_dates = holiday_dates['dates']
+
     current_date = datetime(year, month, 1).date()
 
     while True:
         if (calendar.day_abbr[current_date.weekday()] not in ['Sat', 'Sun']) and (current_date not in holiday_dates):
             return current_date
         current_date += timedelta(days=1)
+
 
 def get_trading_dates(dates_sorted, year, month):
     # Get the first trading date in the specified month using get_first_trading_date
@@ -385,58 +371,79 @@ def calculate_month_returns(data, dates, stocks,
 
 def update_stock_list(data, dates, stocks, 
                       roll_over_trading_date,
-                    carry_forward_scripts, price_tracking_enabled = False, sl = -10):
+                      db_collection_name,
+                    carry_forward_scripts, last_month_portfolio, price_tracking_enabled = False, sl = -10):
 
+    carry_forward_amount = 0
     stock_list = []
     for stock in stocks:
-      stock_dict = {
-          "stock": stock,
-          "initial_price": 0,
-          "final_price": 0,
-          "returns": 0,
-          "carry_forward": False,
-          "sl_triggered": False,
-          "sl_trigger_date": '',
-          "is_new": None,
-      }
+        stock_dict = {
+            "stock": stock,
+            "initial_price": None,
+            "final_price": None,
+            "returns": None,
+            "carry_forward": False,
+            "sl_triggered": None,
+            "sl_trigger_date": None,
+            "is_new": None,
+            "quantity": None
+        }
 
-      initial_price = 0
-      final_price = None
-      stock_returns = None
-      carry_forward = stock in carry_forward_scripts
-      sl_triggered = ''
-      is_new = ''
+        initial_price = None
+        final_price = None
+        stock_returns = None
+        carry_forward = stock in carry_forward_scripts
+        sl_triggered = None
+        sl_trigger_date = None
+        is_new = False
+        quantity = None
 
-      if carry_forward:
-          initial_price = data[data['Date'] == roll_over_trading_date][stock].iloc[0]
-          if initial_price == 0:
-            initial_price = adjust_price_if_zero(data, dates, stock, roll_over_trading_date, carry_forward)
-      else:
-          is_new = True
-          initial_price = 0
+        try:
+            if carry_forward:
+                initial_price = data[data['Date'] == roll_over_trading_date][stock].iloc[0]
+                
+                # initial_price = next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("final_price", 0)
+                quantity = next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("quantity", 0)
+
+                update_price_in_portfolio(db_collection_name, roll_over_trading_date.year, roll_over_trading_date.month, stock, 'final_price', initial_price)
+                # if final_price is not None and quantity is not None:
+                carry_forward_amount += (round(initial_price,2)*round(quantity))
+                # if final_price == 0:
+                #     final_price = adjust_price_if_zero(data, dates, stock, roll_over_trading_date, carry_forward)
+            else:
+                is_new = True
+        except Exception as e:
+            print(stock)
+
+            
+        stock_dict['initial_price'] = initial_price
+        stock_dict['final_price'] = final_price
+        stock_dict['returns'] = stock_returns
+        stock_dict['carry_forward'] = carry_forward
+        stock_dict['sl_triggered'] = sl_triggered
+        stock_dict['sl_trigger_date'] = sl_trigger_date
+        stock_dict['is_new'] = is_new
+        stock_dict['quantity'] = quantity
+
+        stock_list.append(stock_dict)
+
+    return stock_list, carry_forward_amount
 
 
-      stock_dict['initial_price'] = initial_price
-      stock_dict['final_price'] = final_price
-      stock_dict['returns'] = stock_returns
-      stock_dict['carry_forward'] = carry_forward
-      stock_dict['sl_triggered'] = sl_triggered
-      stock_dict['sl_trigger_date'] = None
-      stock_dict['sl_trigger_date'] = None
-      stock_dict['is_new'] = 'NEW' if is_new else ''
-      stock_list.append(stock_dict)
-
-    return stock_list
-
-
-def get_scripts_sorted(ttm_returns, m_score, sorting_criteria, year, month):
-    if sorting_criteria == 'ttm':
-        all_scripts = list(ttm_returns[(ttm_returns['Date'].dt.year == year) & (ttm_returns['Date'].dt.month == month)]
-                       .iloc[0][1:].sort_values(ascending=False).keys())
+# def get_scripts_sorted(ttm_returns, m_score, sorting_criteria, year, month):
+#     if sorting_criteria == 'ttm':
+#         all_scripts = list(ttm_returns[(ttm_returns['Date'].dt.year == year) & (ttm_returns['Date'].dt.month == month)]
+#                        .iloc[0][1:].sort_values(ascending=False).keys())
         
-    if sorting_criteria == 'm_score':
-        all_scripts = list(m_score[(m_score['Date'].dt.year == year) & (m_score['Date'].dt.month == month)]
-                       .iloc[0][1:].sort_values(ascending=False).keys())
+#     if sorting_criteria == 'm_score':
+#         all_scripts = list(m_score[(m_score['Date'].dt.year == year) & (m_score['Date'].dt.month == month)]
+#                        .iloc[0][1:].sort_values(ascending=False).keys())
+    
+#     return all_scripts
+
+def get_scripts_sorted(sorting_score, year, month):
+    all_scripts = list(sorting_score[(sorting_score['Date'].dt.year == year) & (sorting_score['Date'].dt.month == month)]
+                    .iloc[0][1:].sort_values(ascending=False).keys())
     
     return all_scripts
 
@@ -444,13 +451,50 @@ def get_scripts_sorted(ttm_returns, m_score, sorting_criteria, year, month):
 def process_monthly_portfolio(data, volumes, dates, 
                               year, month, 
                               ema, sort_function, number_of_stocks, 
-                              monthly_returns, filters, return_calculations):
-    
+                              last_month_df, filters, return_calculations):
+    if last_month_df is None:
+        last_month_df = {}
+
+    last_month_trades_dict = last_month_df.get('df', {})
+    last_month_portfolio = last_month_trades_dict.get('portfolio',[])
+
+    last_month_scripts = last_month_trades_dict.get('top_n_scripts', [])
+
+    last_month_sl_triggered_scripts = last_month_trades_dict.get('sl_triggered_scripts', [])
+
     first_trading_date, roll_over_trading_date = get_trading_dates(dates, year, month)
-    
-    all_scripts = sort_function(year = year, month = month)
-    top_n_scripts = get_top_n_scripts(data, volumes, ema, first_trading_date, roll_over_trading_date, all_scripts, number_of_stocks, filters)
-    
+
+    all_scripts = sort_function(year=year, month=month)
+    top_n_scripts = get_top_n_scripts(
+        data, volumes, ema, first_trading_date, roll_over_trading_date, all_scripts, number_of_stocks, filters
+    )
+
+    carry_forward_scripts = [
+        script for script in top_n_scripts
+        if script in last_month_scripts and script not in last_month_sl_triggered_scripts
+    ]
+
+    new_added_scripts = [
+        script for script in top_n_scripts if script not in last_month_scripts
+    ]
+
+    buy_order = [{"stock": stock, "order_quantity": None} for stock in new_added_scripts]
+
+    removed_scripts = [
+        script for script in last_month_scripts if script not in top_n_scripts
+    ]
+
+    sell_order = [{"stock": stock,
+                    "order_quantity": next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("quantity", 0)} 
+                    for stock in removed_scripts]
+
+    portfolio, carry_forward_amount = return_calculations(
+        stocks=top_n_scripts,
+        roll_over_trading_date=roll_over_trading_date,
+        carry_forward_scripts=carry_forward_scripts,
+        last_month_portfolio=last_month_portfolio
+    )
+
     monthly_pf = {
         'year': year,
         'month': month,
@@ -463,41 +507,16 @@ def process_monthly_portfolio(data, volumes, dates,
         'sl_triggered_scripts': [],
         'monthly_returns': None,
         'top_n_monthly_returns': [],
-        'scripts_with_returns': {}
+        'scripts_with_returns': {},
+        'last_month_30': last_month_scripts,
+        'new_added_scripts': new_added_scripts,
+        'removed_scripts': removed_scripts,
+        'carry_forward_scripts': carry_forward_scripts,
+        'portfolio': portfolio,
+        'carry_forward_amount': round(carry_forward_amount,2),
+        'buy_order': buy_order,
+        'sell_order': sell_order
     }
-    print(roll_over_trading_date, first_trading_date)
-    if roll_over_trading_date == first_trading_date:
-
-        portfolio = return_calculations(stocks = top_n_scripts,
-                                        roll_over_trading_date = roll_over_trading_date, 
-                                        carry_forward_scripts = [] )
-        
-        monthly_pf['last_month_30'] = []
-        monthly_pf['new_added_scripts'] = []
-        monthly_pf['removed_scripts'] = []
-        monthly_pf['carry_forward_scripts'] = []
-        monthly_pf['portfolio'] = portfolio
-    else:
-        if monthly_returns is None:
-            monthly_returns = {}
-        
-        last_month_trades_dict = monthly_returns.get('df',{})
-        last_month_scripts = last_month_trades_dict.get('top_n_scripts', [])
-        last_month_sl_triggered_scripts = last_month_trades_dict.get('sl_triggered_scripts', [])
-
-        new_added_scripts = [script for script in top_n_scripts if script not in last_month_scripts]
-        removed_scripts = [script for script in last_month_scripts if script not in top_n_scripts]
-        carry_forward_scripts = [script for script in top_n_scripts if (script in last_month_scripts) and (script not in last_month_sl_triggered_scripts)]
-        
-        portfolio = return_calculations(stocks = top_n_scripts,
-                                        roll_over_trading_date = roll_over_trading_date, 
-                                        carry_forward_scripts = carry_forward_scripts)
-
-        monthly_pf['last_month_30'] = last_month_scripts
-        monthly_pf['new_added_scripts'] = new_added_scripts
-        monthly_pf['removed_scripts'] = removed_scripts
-        monthly_pf['carry_forward_scripts'] = carry_forward_scripts
-        monthly_pf['portfolio'] = portfolio
 
     return monthly_pf
 
@@ -995,14 +1014,25 @@ def save_dict_to_json(data_dict, filename):
         json.dump(data_dict, json_file, cls=CustomJSONEncoder, indent=4)
     
 
-def is_first_day_of_month(date):
-    # first_day = calendar.monthrange(date.year, date.month)[0]
-    # print(first_day)
-    return date.day == 1
+def is_first_trading_day_of_month(date):
+    d = get_first_trading_date(date.year, date.month)
+    return date.date() == d
 
 
-def get_columns_for_index(index):
-    stocks = get_index_constituents(index)
-    scrips = ['Date']
-    scrips.extend(stocks)
-    return scrips
+def get_filtered_data_based_on_index(data,  index):
+
+    scrips = []
+    if index == 'NSE':
+        for c in data.columns:
+            if "-RE" not in c:
+                if "GSEC" not in c:
+                    if "ETF" not in c:
+                        if "BEES" not in c:
+                            scrips.append(c)
+    else:
+        stocks = get_index_constituents(index)
+        scrips = ['Date']
+        scrips.extend(stocks)
+
+    data = data[scrips]
+    return data

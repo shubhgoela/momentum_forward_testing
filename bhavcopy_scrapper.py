@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from bhavcopy_utils import(get_valid_dates, handle_bhav_copy_response, 
+from bhavcopy_utils import(handle_bhav_copy_response, 
                            file_exists, save_to_archive, check_date_in_csv, check_date_in_bhavcopy)
 
 from utils import month_abbreviations, abbreviation_to_month

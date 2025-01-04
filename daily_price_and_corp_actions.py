@@ -6,7 +6,7 @@ from corp_actions import adjust_corp_actions
 
 
 def update_daily_prices_and_adjust_corp_actions():
-    date = datetime(year=2024, month=11, day=29)
+    date = datetime(year=2024, month=12, day=31)
     if is_valid_date(date):
         r = scrap_data(date)
         print('data addition complete.')

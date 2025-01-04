@@ -18,6 +18,7 @@ def get_cookies_from_driver(base_url):
     chrome_options.add_argument('--disable-dev-shm-usage')  # Required for some environments
     chrome_options.add_argument('--disable-images')  # Optional: disable images for faster loading
 
+    driver = None
     try:
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         driver.get(base_url)
@@ -26,7 +27,8 @@ def get_cookies_from_driver(base_url):
         print(f"An error occurred: {e}")
         cookies = []
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
     return cookies
 

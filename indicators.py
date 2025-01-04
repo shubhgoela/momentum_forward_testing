@@ -131,6 +131,44 @@ def calculate_daily_change(data, dates):
     result.fillna(0, inplace=True)
     return result
 
+def calculate_coefficient_of_variation(ttm, daily_change, lookback_months=12, absolute = False):
+    
+    ttm['Date'] = pd.to_datetime(ttm['Date'])
+    daily_change['Date'] = pd.to_datetime(daily_change['Date'])
+
+    c_scores = []
+
+    for date in ttm['Date']:
+        row_item = {'Date': date}
+        year, month = date.year, date.month
+
+        start_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(months=lookback_months)
+        end_date = pd.Timestamp(year=year, month=month, day=1) - pd.DateOffset(days=1)
+
+        # Calculate c-score for each stock
+        for stock in ttm.columns[1:]:
+            if absolute:
+                std_values = daily_change.loc[(daily_change['Date'] >= start_date) & (daily_change['Date'] <= end_date) & (daily_change[stock] < 0), stock].abs()
+            else:
+                std_values = daily_change.loc[(daily_change['Date'] >= start_date) & (daily_change['Date'] <= end_date), stock]
+            
+            std = std_values.std()
+            mean = std_values.mean()
+            
+            if std == 0 or std == np.nan or mean == 0 or mean == np.nan:
+                c_score = None
+            else:
+                try:
+                    variation_ratio = std / mean
+                    c_score = ttm.loc[ttm['Date'] == date, stock].values[0]/ variation_ratio
+                except Exception as e:
+                    c_score = None
+
+            row_item[stock] = c_score
+
+        c_scores.append(row_item)
+
+    return pd.DataFrame(c_scores)
 
 def calculate_m_score(ttm, daily_change, lookback_months=12, absolute = False):
 
