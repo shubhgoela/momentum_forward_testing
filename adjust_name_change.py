@@ -49,4 +49,4 @@ def merge_col(new_name, old_name):
 
     return True
 
-# merge_col(new_name= 'VEEDOL', old_name='TIDEWATER')
+# merge_col(new_name= 'SAMMAANCAP', old_name='IBULHSGFIN')
