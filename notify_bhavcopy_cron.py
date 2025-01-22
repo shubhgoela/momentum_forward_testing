@@ -39,6 +39,7 @@ SENDER_EMAIL = os.getenv('SENDER_EMAIL')
 SENDER_PASSWORD = os.getenv('SENDER_PASSWORD')
 SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
+BHAVCOPY_FILE_NAMES = ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)', 'Full Bhavcopy and Security Deliverable data']
 
 def run_terminal_command(command):
     """
@@ -91,6 +92,7 @@ def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_d
     chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
     chrome_options.add_argument('--disable-blink-features=AutomationControlled')
 
+    driver = None
     results = []
     for attempt in range(max_retries):
         try:
@@ -139,7 +141,10 @@ def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_d
             run_terminal_command("pkill -f chromedriver")
         except NoSuchElementException:
             logger.error(f"Element not found on attempt {attempt + 1}. Retrying...")
-            run_terminal_command("rm -rf ~/Library/Caches/Google/Chrome/Default/Cache/*")
+            try:
+                run_terminal_command("rm -rf ~/.caches/google-chrome/Default/Cache/*")
+            except Exception as e:
+                continue
         except (WebDriverException, RequestException) as e:
             logger.error(f"WebDriverException: {e} - Retrying... (Attempt {attempt+1})")
             run_terminal_command("pkill -f chromedriver")
@@ -158,7 +163,10 @@ def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_d
     return results
 
 
-def check_for_files(template_name = 'bhavcopy_noti'):
+def check_for_files(template_name = 'bhavcopy_noti', sent_files = []):
+
+    if sent_files == BHAVCOPY_FILE_NAMES:
+        return []
     filtered_docs = []
     logger.info('getting files from derivatives section...')
     # cr_deriv_equity_daily_Previous, cr_deriv_equity_daily_Current
@@ -184,26 +192,27 @@ def check_for_files(template_name = 'bhavcopy_noti'):
             template = get_mail_template(template_name)
             template = None
             body = generate_html_table(template, [file])
-            file_names.append(file.get('display_name'))
-            if template is None:
-                mail_sent = send_email( 
-                    recipient_emails=['shubh.goela@mnclgroup.com'],
-                    subject=file.get('display_name'),
-                    body=body,
-                    html_body=body)  
-            else:  
-                mail_sent = send_email( 
-                    recipient_emails=template.get('recipients', ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain@mnclgroup.com', 'mayank.jain@mnclgroup.com']),
-                    subject=file.get('display_name'),
-                    body=body,
-                    html_body=body)
+
+            print(sent_files)
+            if file.get('display_name') not in sent_files:
+                file_names.append(file.get('display_name'))
+                if template is None:
+                    mail_sent = send_email( 
+                        recipient_emails=['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com'],
+                        subject=file.get('display_name'),
+                        body=body,
+                        html_body=body)  
+                else:  
+                    mail_sent = send_email( 
+                        recipient_emails=template.get('recipients', ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com']),
+                        subject=file.get('display_name'),
+                        body=body,
+                        html_body=body)
 
     return file_names
-    # if mail_sent:
-    #     return
 
 
-def loop_question_between_times(start_time="17:30", end_time="23:00", interval=60):
+def loop_question_between_times(start_time="15:00", end_time="23:00", interval=60):
     """
     Continuously prompts a question between specified times.
 
@@ -222,18 +231,20 @@ def loop_question_between_times(start_time="17:30", end_time="23:00", interval=6
     while True:
         now = datetime.now().time()
         print('now: ', now)
+        print(BHAVCOPY_FILE_NAMES)
+        print(files)
         # Check if the current time falls within the specified range
-        if start <= now <= end:
-            f = check_for_files()
+        if start <= now <= end and files != BHAVCOPY_FILE_NAMES:
+            f = check_for_files(template_name = 'bhavcopy_noti', sent_files = files)
             if f != []:
                 files.extend(f)
                 files = list(set(files))
         
         # Wait for the specified interval before asking again
         print('sleeping...')
-        time.sleep(60)
+        time.sleep(30)
 
-        if files == ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)', 'Full Bhavcopy and Security Deliverable data']:
+        if files == BHAVCOPY_FILE_NAMES:
             break
         # Exit condition after the time window closes
         if now > end:
