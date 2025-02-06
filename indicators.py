@@ -131,6 +131,7 @@ def calculate_daily_change(data, dates):
     result.fillna(0, inplace=True)
     return result
 
+
 def calculate_coefficient_of_variation(ttm, daily_change, lookback_months=12, absolute = False):
     
     ttm['Date'] = pd.to_datetime(ttm['Date'])
@@ -170,6 +171,7 @@ def calculate_coefficient_of_variation(ttm, daily_change, lookback_months=12, ab
 
     return pd.DataFrame(c_scores)
 
+
 def calculate_m_score(ttm, daily_change, lookback_months=12, absolute = False):
 
     ttm['Date'] = pd.to_datetime(ttm['Date'])
@@ -191,7 +193,7 @@ def calculate_m_score(ttm, daily_change, lookback_months=12, absolute = False):
             
             std = std_values.std()
 
-            if std == 0 or std == np.nan:
+            if std == 0 or pd.isna(std):
                 m_score = 0  # Handle division by zero
             else:
                 m_score = ttm.loc[ttm['Date'] == date, stock].values[0] / std
@@ -230,6 +232,6 @@ def volume_check(data, volumes, ema, stock, roll_over_trading_date, min_volume =
     month_data = data[(data['Date'].dt.month == month) & (data['Date'].dt.year == year)]
     month_volumes = volumes[(volumes['Date'].dt.month == month) & (volumes['Date'].dt.year == year)]
 
-    weighted_avg = (month_data[stock] * month_volumes[stock]).mean()
+    daily_avg_traded_value = (month_data[stock] * month_volumes[stock]).mean()
 
-    return weighted_avg > min_volume
+    return daily_avg_traded_value > min_volume

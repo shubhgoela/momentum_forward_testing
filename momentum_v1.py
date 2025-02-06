@@ -21,7 +21,7 @@ STRATEGY = 'V1'
 
 def create_portfolio():
     try:
-        today = datetime(year=2025, month=1, day=1)
+        today = datetime(year=2025, month=2, day=1)
         # today = datetime.now()
         if is_first_trading_day_of_month(today):
             year = today.year
@@ -68,7 +68,9 @@ def create_portfolio():
                 create_orders(strategy_version=STRATEGY, index = index, collection_name = db_collection_name, month_portfolio=this_month_portfolio)
 
             return True
-    
+
+        else:
+            print('in valid date')
     except Exception as e:
         traceback.print_exc()
         print('error: ', str(e))

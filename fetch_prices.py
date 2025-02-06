@@ -1,5 +1,6 @@
 import yfinance as yf
 from datetime import datetime, timedelta, time
+import pandas as pd
 
 def get_stock_price(symbol, target_datetime, exchange='NSE', max_iterations = 10):
     """
@@ -51,6 +52,10 @@ def get_stock_price(symbol, target_datetime, exchange='NSE', max_iterations = 10
         target_datetime += timedelta(minutes=1)
 
     return f"No exact match for {symbol} at {target_datetime}"
+
+# def get_stock_price(df, symbol):
+#     # print(df.loc[df['stocks'] == symbol, 'entry_price'].iloc[0])
+#     return df.loc[df['stocks'] == symbol, 'entry_price'].iloc[0]
 
 # today = datetime(year=2025, month=1, day=1)
 # order_placement_datetime = datetime.combine(today.date(), time(hour=10, minute=0, second=0))

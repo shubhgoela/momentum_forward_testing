@@ -17,7 +17,7 @@ import smtplib
 from dotenv import find_dotenv, load_dotenv
 
 from utils import month_abbreviations, abbreviation_to_month
-from queries import get_holidays_for_year
+from queries import get_holidays_for_year, get_exception_trading_dates_to_year
 
 dotenv_path = find_dotenv()
 
@@ -34,6 +34,7 @@ SMTP_PORT = int(os.getenv('SMTP_PORT'))
 def file_exists(filepath):
     return Path(filepath).is_file()
 
+
 def get_shared_strings(zf):
     """Extract shared strings from sharedStrings.xml"""
     shared_strings = []
@@ -43,6 +44,7 @@ def get_shared_strings(zf):
         for si in root.findall(".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}si"):
             shared_strings.append(''.join(node.text for node in si.findall(".//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t") if node.text))
     return shared_strings
+
 
 def extract_data_from_sheet(zf, sheet_name, shared_strings):
     """Extract data from a specific worksheet, replacing shared string indices with actual values"""
@@ -68,6 +70,7 @@ def extract_data_from_sheet(zf, sheet_name, shared_strings):
             data.append(row_data)
     return data
 
+
 def read_excel_file(file, bhav_copy_logger):
     # Try different Excel engines
     df = []
@@ -86,7 +89,8 @@ def read_excel_file(file, bhav_copy_logger):
         return False
     else:
         return df
-    
+
+
 def handle_bhav_copy_response(response, date, bhav_copy_logger):
     try:
         content_type = response.headers.get('Content-Type', '')
@@ -147,6 +151,7 @@ def handle_bhav_copy_response(response, date, bhav_copy_logger):
     except Exception as e:
         raise Exception(str(e))
 
+
 def get_valid_dates(start_year, start_month, start_day):
     # Create a datetime object for the start date
     valid_dates = []
@@ -161,17 +166,20 @@ def get_valid_dates(start_year, start_month, start_day):
 
     return valid_dates
 
+
 def create_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
     
     return directory
 
+
 def save_to_archive(bhav_copy_archive_path, text, filename):
     bhav_copy_archive_path = create_directory(bhav_copy_archive_path)
     file_path = bhav_copy_archive_path + filename
     text.to_csv(file_path)
     return file_path
+
 
 def check_date_in_csv(file_path, date_to_check):
     """
@@ -196,6 +204,7 @@ def check_date_in_csv(file_path, date_to_check):
     
     # Check if the date is in the 'Date' column
     return pd.to_datetime(date_to_check) in df['Date'].values
+
 
 def check_date_in_bhavcopy(data, date_to_check):
     """
@@ -245,11 +254,21 @@ def is_valid_date(date_to_check):
     else:
         holiday_dates = holiday_dates['dates']
 
+    exception_trading_dates = get_exception_trading_dates_to_year(date.year)
+
+    if exception_trading_dates is None:
+        exception_trading_dates = []
+    else:
+        exception_trading_dates = [d.date() for d in list(set(exception_trading_dates['dates']))]
+    
+    if any(d == date for d in exception_trading_dates):
+        return True
     # Check if the date is a weekday and not a holiday
     is_weekday = calendar.day_abbr[date.weekday()] not in ['Sat', 'Sun']
     is_a_holiday =  any(d.date() == date for d in holiday_dates)
 
     return is_weekday and not is_a_holiday
+
 
 def generate_html_table(template, data):
     """

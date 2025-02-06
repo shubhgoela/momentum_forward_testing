@@ -1,7 +1,7 @@
 from dotenv import find_dotenv, load_dotenv
 from datetime import datetime, time
 import threading
-
+import math
 
 from indicators import *
 from utils import *
@@ -16,29 +16,33 @@ if dotenv_path:
 else:
     print("No .env file found")
 
-INITIAL_INVESTMENT_VALUE = int(os.getenv('INITIAL_INVESTMENT_VALUE'))
-# STRATEGIES = ['V1', 'V2', 'V3']
-STRATEGIES = ['V3']
-# INDEX_LIST = os.getenv('INDEX_LIST').split(',')
-INDEX_LIST = ['NIFTY_500']
+STRATEGIES = ['V1', 'V2', 'V3','V4']
+INDEX_LIST = os.getenv('INDEX_LIST').split(',')
 
 def execute_order():
-    today = datetime(year=2025, month=1, day=1)
+    today = datetime(year=2025, month=2, day=1)
     # today = datetime.now() 
-    year = today.year
-    month = today.month
 
     if not is_first_trading_day_of_month(today):
         return
     
+    year = today.year
+    month = today.month
+
+    last_portfolio_year = year - 1 if month == 1 else year
+    last_portfolio_month = 12 if month == 1 else month - 1
+
     order_placement_datetime = datetime.combine(today.date(), time(hour=10, minute=0, second=0))
 
+    # prices_df = pd.read_excel('/Users/shubhgoela/Downloads/stock_carry (1).xlsx', sheet_name='stock_carry')
     for strategy in STRATEGIES:
         for index in INDEX_LIST:
             total_cash = 0
+            cash_utilised = 0
             strategy_name = f'{strategy}_{index}'
 
             print('strategy_name : ', strategy_name)
+            cash_balance = get_cash_balance(strategy_name,last_portfolio_year, last_portfolio_month)
             sell_orders = get_pending_orders_by_date(date=today, strategy=strategy_name, order_type= OrderType.SELL.value)
             buy_orders = get_pending_orders_by_date(date=today, strategy=strategy_name, order_type= OrderType.BUY.value)
 
@@ -49,26 +53,32 @@ def execute_order():
                 for order in sell_orders:
                     stock = order['stock']
                     price = get_stock_price(symbol=stock, target_datetime=order_placement_datetime)
+                    # price = get_stock_price(prices_df,stock)
                     order_quantity = order['order_quantity']
                     total_cash += (round(price,2) * round(order_quantity))
                     thread = threading.Thread(target=place_order, args=(strategy_name, stock, OrderType.SELL.value, 'at_market', order_quantity, order, price))
                     thread.start()
-            else:
-                total_cash = INITIAL_INVESTMENT_VALUE
+
             
-            total_cash = round(total_cash, 2)
+            perform_cash_operations(strategy_name, last_portfolio_year, last_portfolio_month, 'recovered_cash', total_cash)
 
-            thread = threading.Thread(target=perform_cash_operations, args=(total_cash, strategy_name, year, month))
-            thread.start()
+            total_cash = round(total_cash, 2) + cash_balance
 
-            cash_for_each_script = total_cash/len(buy_orders)
+            perform_cash_operations(strategy_name, year, month, 'cash', total_cash)
 
-            for order in buy_orders:
-                stock = order['stock']
-                price = get_stock_price(symbol=stock, target_datetime=order_placement_datetime)
-                order_quantity = round(cash_for_each_script/price,0)
-                thread = threading.Thread(target=place_order, args=(strategy_name, stock, OrderType.BUY.value, 'at_market', order_quantity, order, price))
-                thread.start()
+            if len(buy_orders)>0:
+                cash_for_each_script = total_cash/len(buy_orders)
+                for order in buy_orders:
+                    stock = order['stock']
+                    price = get_stock_price(symbol=stock, target_datetime=order_placement_datetime)
+                    # price = get_stock_price(prices_df,stock)
+                    order_quantity = math.floor(cash_for_each_script/price)
+                    cash_utilised += (price*order_quantity)
+                    thread = threading.Thread(target=place_order, args=(strategy_name, stock, OrderType.BUY.value, 'at_market', order_quantity, order, price))
+                    thread.start()
+                
+            cash_balance = total_cash - cash_utilised
+            perform_cash_operations(strategy_name, year, month, 'cash_balance', cash_balance)
 
 
 def place_order(strategy_name, stock, order_type, price_mode, order_quantity, order_metadata, execution_price):
@@ -85,7 +95,7 @@ def place_order(strategy_name, stock, order_type, price_mode, order_quantity, or
         price_type = 'final_price'
     else:
         price_type = 'initial_price'
-        
+    
     update_price_in_portfolio(strategy_name=strategy_name,
                                 year=order_metadata['year'],
                                 month=order_metadata['month'],
@@ -100,17 +110,7 @@ def place_order(strategy_name, stock, order_type, price_mode, order_quantity, or
                                 quantity=order_quantity)
 
 
-
-def perform_cash_operations(cash_amount, strategy_name, year, month):
-    print(f"Performing operations with cash amount: {cash_amount}", strategy_name, year, month)
-    
-    update_cash_component_in_portfolio_document(strategy_name, year, month, 'cash', cash_amount)
-
-    year = year - 1 if month == 1 else year
-    month = 12 if month == 1 else month - 1
-
-    update_cash_component_in_portfolio_document(strategy_name, year, month, 'recovered_cash', cash_amount)
-    
-    print(f"Cash operations completed with total: {cash_amount}")
+def perform_cash_operations(strategy_name, year, month, type, cash_amount):
+    update_cash_component_in_portfolio_document(strategy_name, year, month, type, cash_amount)
 
 execute_order()

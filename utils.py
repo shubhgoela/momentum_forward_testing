@@ -8,7 +8,9 @@ from dotenv import load_dotenv, find_dotenv
 import os
 import traceback
 
-from queries import get_index_constituents, get_holidays_for_year, update_price_in_portfolio
+from queries import (get_index_constituents, get_holidays_for_year, 
+                     update_price_in_portfolio, get_exception_trading_dates_to_year,
+                     fetch_portfolio)
 
 dotenv_path = find_dotenv()
 load_dotenv(dotenv_path=dotenv_path, override=True)
@@ -225,15 +227,23 @@ def filter_dates_by_month(dates_sorted, start_date, end_date):
 def get_first_trading_date(year, month):
 
     holiday_dates = get_holidays_for_year(year)
+    exception_trading_dates = get_exception_trading_dates_to_year(year)
+
     if holiday_dates is None:
         holiday_dates = []
     else:
-        holiday_dates = holiday_dates['dates']
+        holiday_dates = [d.date() for d in list(set(holiday_dates['dates']))]
+
+    if exception_trading_dates is None:
+        exception_trading_dates = []
+    else:
+        exception_trading_dates = [d.date() for d in list(set(exception_trading_dates['dates']))]
+    
 
     current_date = datetime(year, month, 1).date()
 
     while True:
-        if (calendar.day_abbr[current_date.weekday()] not in ['Sat', 'Sun']) and (current_date not in holiday_dates):
+        if (current_date in exception_trading_dates) or ((calendar.day_abbr[current_date.weekday()] not in ['Sat', 'Sun']) and (current_date not in holiday_dates)):
             return current_date
         current_date += timedelta(days=1)
 
@@ -404,8 +414,9 @@ def update_stock_list(data, dates, stocks,
                 
                 # initial_price = next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("final_price", 0)
                 quantity = next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("quantity", 0)
-
+                last_returns = ((initial_price/next(filter(lambda x: x["stock"] == stock, last_month_portfolio),{}).get("initial_price", 0))-1)*100
                 update_price_in_portfolio(db_collection_name, roll_over_trading_date.year, roll_over_trading_date.month, stock, 'final_price', initial_price)
+                update_price_in_portfolio(db_collection_name, roll_over_trading_date.year, roll_over_trading_date.month, stock, 'returns', last_returns)
                 # if final_price is not None and quantity is not None:
                 carry_forward_amount += (round(initial_price,2)*round(quantity))
                 # if final_price == 0:
@@ -415,7 +426,7 @@ def update_stock_list(data, dates, stocks,
         except Exception as e:
             print(stock)
 
-            
+
         stock_dict['initial_price'] = initial_price
         stock_dict['final_price'] = final_price
         stock_dict['returns'] = stock_returns
@@ -1036,3 +1047,13 @@ def get_filtered_data_based_on_index(data,  index):
 
     data = data[scrips]
     return data
+
+
+def get_cash_balance(strategy_name, year, month):
+    last_month_df = fetch_portfolio(collection_name=strategy_name, 
+                                                year= year,
+                                                month= month)
+    if last_month_df is None:
+        return 0
+    
+    return last_month_df.get('df',{}).get('cash_balance',0)
