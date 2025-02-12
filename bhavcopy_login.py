@@ -34,7 +34,7 @@ def get_cookies_from_driver(base_url):
 
 
 
-def login(base_url, extention):
+def login(base_url, extention = ''):
     cookies = get_cookies_from_driver(base_url)
 
     session = requests.Session()

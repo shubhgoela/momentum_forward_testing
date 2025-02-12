@@ -16,8 +16,9 @@ from datetime import datetime
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 import subprocess
 
+from bhavcopy_login import login
 from logging_config import setup_logging
-from bhavcopy_utils import generate_html_table, send_email
+from bhavcopy_utils import generate_html_table, send_email, handle_file_response
 from queries import get_mail_template
 
 
@@ -163,42 +164,46 @@ def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_d
     return results
 
 
-def check_for_files(template_name = 'bhavcopy_noti', sent_files = []):
+def check_for_files( eq_section_id= "cr_equity_daily_Current", der_section_id="cr_deriv_equity_daily_Current"):
 
-    if sent_files == BHAVCOPY_FILE_NAMES:
-        return []
     filtered_docs = []
     logger.info('getting files from derivatives section...')
     # cr_deriv_equity_daily_Previous, cr_deriv_equity_daily_Current
-    derivative_file_details = get_display_and_file_names(NSE_base_url, endpoint = '/all-reports-derivatives', section_id="cr_deriv_equity_daily_Current")
+    derivative_file_details = get_display_and_file_names(NSE_base_url, endpoint = '/all-reports-derivatives', section_id = der_section_id)
     if derivative_file_details != []:
         for file in derivative_file_details:
-            if file['display_name'] in ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)']:
+            if file['display_name'] in BHAVCOPY_FILE_NAMES:
                 filtered_docs.append(file)
     
     logger.info('getting files from capital markets section...')
     # cr_equity_daily_Previous, cr_equity_daily_Current
-    equity_file_details = get_display_and_file_names(NSE_base_url, endpoint = '/all-reports', section_id="cr_equity_daily_Current")
+    equity_file_details = get_display_and_file_names(NSE_base_url, endpoint = '/all-reports', section_id= eq_section_id)
     if equity_file_details != []:
         for file in equity_file_details:
-            if file['display_name'] in ['Full Bhavcopy and Security Deliverable data']:
+            if file['display_name'] in BHAVCOPY_FILE_NAMES:
                 filtered_docs.append(file)
     
-    file_names = []
-    if len(filtered_docs) > 0:
+    file_names = [file.get('display_name') for file in filtered_docs]
 
+    return file_names, filtered_docs
+
+def process_filter_docs_for_noti(filtered_docs, template_name = 'bhavcopy_noti', sent_files = []):
+    print('in process_filter_docs_for_noti')
+    print(sent_files)
+    print(filtered_docs)
+    if len(filtered_docs) > 0:
         for file in filtered_docs:
             print('generating html...')
             template = get_mail_template(template_name)
             template = None
             body = generate_html_table(template, [file])
 
-            print(sent_files)
             if file.get('display_name') not in sent_files:
-                file_names.append(file.get('display_name'))
+                # file_names.append(file.get('display_name'))
                 if template is None:
                     mail_sent = send_email( 
                         recipient_emails=['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com'],
+                        # recipient_emails= ['shubh.goela@mnclgroup.com'],
                         subject=file.get('display_name'),
                         body=body,
                         html_body=body)  
@@ -208,11 +213,9 @@ def check_for_files(template_name = 'bhavcopy_noti', sent_files = []):
                         subject=file.get('display_name'),
                         body=body,
                         html_body=body)
+    return True
 
-    return file_names
-
-
-def loop_question_between_times(start_time="15:00", end_time="23:00", interval=60):
+def loop_question_between_times(start_time="00:00", end_time="23:00", interval=60):
     """
     Continuously prompts a question between specified times.
 
@@ -223,33 +226,63 @@ def loop_question_between_times(start_time="15:00", end_time="23:00", interval=6
         interval (int): The number of seconds to wait between each prompt.
 
     """
+    today = datetime.now().strftime('%Y-%m-%d')
     start = datetime.strptime(start_time, "%H:%M").time()
     end = datetime.strptime(end_time, "%H:%M").time()
     print(start)
     print(end)
     files = []
+    filtered_docs = []
     while True:
         now = datetime.now().time()
-        print('now: ', now)
-        print(BHAVCOPY_FILE_NAMES)
-        print(files)
-        # Check if the current time falls within the specified range
-        if start <= now <= end and files != BHAVCOPY_FILE_NAMES:
-            f = check_for_files(template_name = 'bhavcopy_noti', sent_files = files)
+        # print('now: ', now)
+        # print(files)
+        if start <= now <= end and set(files) != set(BHAVCOPY_FILE_NAMES):
+            f, fd = check_for_files( eq_section_id="cr_equity_daily_Current" , der_section_id="cr_deriv_equity_daily_Current")
+            process_filter_docs_for_noti(filtered_docs = fd, sent_files=files)
             if f != []:
                 files.extend(f)
                 files = list(set(files))
-        
-        # Wait for the specified interval before asking again
-        print('sleeping...')
-        time.sleep(30)
+                filtered_docs.extend(fd)
+                filtered_docs = list({tuple(sorted(d.items())) for d in filtered_docs})
+                filtered_docs = [dict(t) for t in filtered_docs]
 
-        if files == BHAVCOPY_FILE_NAMES:
+            print('sleeping...')
+            time.sleep(30)
+        else:
+            if now > end:
+                print("The time window has closed. Exiting loop.")
             break
-        # Exit condition after the time window closes
-        if now > end:
-            print("The time window has closed. Exiting loop.")
-            break
+    
+    print(filtered_docs)
+    session = login(NSE_base_url)
+    for file in filtered_docs:
+        if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
+            response = session.get(file['file_link'])
+            response.raise_for_status()
+            if response.status_code == 200:
+                current_df = handle_file_response(response, today, logger)
+                current_df.dropna(axis=1, how='all', inplace=True)
+                current_df.columns = [v.strip() for v in current_df.iloc[0]]
+                current_df = current_df.loc[1:]
+                break
+    
 
+    f, fd = check_for_files( eq_section_id="cr_equity_daily_Previous" , der_section_id="cr_deriv_equity_daily_Previous")
+    for file in filtered_docs:
+        if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
+            response = session.get(file['file_link'])
+            response.raise_for_status()
+            if response.status_code == 200:
+                previous_df = handle_file_response(response, today, logger)
+                previous_df.dropna(axis=1, how='all', inplace=True)
+                previous_df.columns = [v.strip() for v in previous_df.iloc[0]]
+                previous_df = previous_df.loc[1:]
+                break
+            # return df
+    print('########curren_df')
+    print(current_df)
+    print('########previous_df')
+    print(previous_df)
 # Example usage:
 loop_question_between_times(interval=300)

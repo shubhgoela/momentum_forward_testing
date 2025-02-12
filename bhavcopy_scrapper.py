@@ -19,7 +19,8 @@ import xml.etree.ElementTree as ET
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
 from bhavcopy_utils import(handle_bhav_copy_response, 
-                           file_exists, save_to_archive, check_date_in_csv, check_date_in_bhavcopy)
+                           file_exists, save_to_archive, check_date_in_csv, check_date_in_bhavcopy,
+                           handle_file_response)
 
 from utils import month_abbreviations, abbreviation_to_month
 from logging_config import setup_logging
@@ -231,7 +232,7 @@ def get_bhav_copy(day = "05", month = "12", year = "2019"):
         response = session.get(data_url, params=params)
         response.raise_for_status()
         if response.status_code == 200:
-            df = handle_bhav_copy_response(response, date, bhav_copy_logger)
+            df = handle_file_response(response, date, bhav_copy_logger)
             return df
         else:
             print(f"Error: {response.status_code}")

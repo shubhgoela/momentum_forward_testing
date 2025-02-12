@@ -71,7 +71,7 @@ def extract_data_from_sheet(zf, sheet_name, shared_strings):
     return data
 
 
-def read_excel_file(file, bhav_copy_logger):
+def read_excel_file(file, logger):
     # Try different Excel engines
     df = []
     engines = ['openpyxl', 'xlrd']
@@ -81,11 +81,11 @@ def read_excel_file(file, bhav_copy_logger):
         except ValueError:
             continue
         except Exception as e:
-            bhav_copy_logger.warning(f"Error reading Excel with {engine} engine: {str(e)}")
+            logger.warning(f"Error reading Excel with {engine} engine: {str(e)}")
             continue
     
     if df == []:
-        bhav_copy_logger.critical("Failed to read excel from all engined")
+        logger.critical("Failed to read excel from all engined")
         return False
     else:
         return df
@@ -398,3 +398,64 @@ def send_email(
     except Exception as e:
         print(f"Failed to send email: {e}")
         return False
+    
+
+def handle_file_response(response, date, logger):
+    try:
+        content_type = response.headers.get('Content-Type', '')
+        logger.info(f"Received content type: {content_type}")
+        logger.info(f"Response status code: {response.status_code}")
+        
+        # Check for ZIP file
+        if response.content.startswith(b'PK'):
+            logger.info("Detected ZIP file in response")
+
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                data_file = None
+                for file_name in zf.namelist():
+                    if (file_name.endswith(('.csv', '.xls', '.xlsx')) or 'sheet' in file_name.lower()) and (not file_name.endswith(('.xml'))):
+                        data_file = file_name
+                        break
+                
+                if data_file:
+                    with zf.open(data_file) as file:
+                        if data_file.endswith('.csv'):
+                            df = pd.read_csv(file)
+                        else:  # Excel file
+                            df = read_excel_file(file, logger)
+                    return df
+                
+                else:
+                    shared_strings = get_shared_strings(zf)
+
+                    worksheet_files = [f for f in  zf.namelist() if f.startswith('xl/worksheets/') and f.endswith('.xml')]
+
+                    if not worksheet_files:
+                        raise ValueError("No worksheet XML files found in the archive.")
+                    
+                    data = extract_data_from_sheet(zf, worksheet_files[0], shared_strings)
+
+                    df = pd.DataFrame(data[1:], columns=data[0])
+                    return df
+
+            logger.warning(f"No suitable data file found in ZIP - {date}")
+            return None
+        
+        # Check for Excel file
+        elif b'workbook.xml' in response.content or b'spreadsheetml' in response.content:
+            logger.info("Detected Excel file in response")
+            df = pd.read_excel(io.BytesIO(response.content))
+            return df
+        
+        # Check for CSV
+        elif 'text/csv' in content_type:
+            logger.info("Detected CSV content in response")
+            df = pd.read_csv(io.StringIO(response.text))
+            return df
+        
+        else:
+            logger.critical(f"Content Type not detected: {date}")
+            raise Exception(f"Content Type not detected: {date}")
+        
+    except Exception as e:
+        raise Exception(str(e))
