@@ -15,6 +15,9 @@ import time
 from datetime import datetime
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 import subprocess
+import re
+import pandas as pd
+import numpy as np
 
 from bhavcopy_login import login
 from logging_config import setup_logging
@@ -41,6 +44,7 @@ SENDER_PASSWORD = os.getenv('SENDER_PASSWORD')
 SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
 BHAVCOPY_FILE_NAMES = ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)', 'Full Bhavcopy and Security Deliverable data']
+MAIL_RECIPIENTS = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com']
 
 def run_terminal_command(command):
     """
@@ -53,7 +57,8 @@ def run_terminal_command(command):
     except subprocess.CalledProcessError as e:
         logger.error(f"Command failed: {command}. Error: {e.stderr}")
         return None
-    
+
+
 def update_chromedriver():
     """
     This function forces an update of the ChromeDriver to the latest version.
@@ -65,6 +70,7 @@ def update_chromedriver():
         logger.info("ChromeDriver updated successfully.")
     except Exception as e:
         logger.error(f"Failed to update ChromeDriver: {e}")
+
 
 def clean_user_temp():
     """
@@ -83,6 +89,7 @@ def clean_user_temp():
             logger.info(f"Cleaned {directory}")
     except Exception as e:
         logger.error(f"Error cleaning user temp directories: {e}")
+
 
 def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_daily_Current", max_retries=3, scroll_pause_time=2):
     chrome_options = Options()
@@ -187,6 +194,7 @@ def check_for_files( eq_section_id= "cr_equity_daily_Current", der_section_id="c
 
     return file_names, filtered_docs
 
+
 def process_filter_docs_for_noti(filtered_docs, template_name = 'bhavcopy_noti', sent_files = []):
     print('in process_filter_docs_for_noti')
     print(sent_files)
@@ -202,18 +210,259 @@ def process_filter_docs_for_noti(filtered_docs, template_name = 'bhavcopy_noti',
                 # file_names.append(file.get('display_name'))
                 if template is None:
                     mail_sent = send_email( 
-                        recipient_emails=['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com'],
+                        recipient_emails=MAIL_RECIPIENTS,
                         # recipient_emails= ['shubh.goela@mnclgroup.com'],
                         subject=file.get('display_name'),
                         body=body,
                         html_body=body)  
                 else:  
                     mail_sent = send_email( 
-                        recipient_emails=template.get('recipients', ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com']),
+                        recipient_emails=template.get('recipients', MAIL_RECIPIENTS),
                         subject=file.get('display_name'),
                         body=body,
                         html_body=body)
     return True
+
+
+def extract_date_from_csv(text, year):
+    match_1 = re.search(r'([A-Za-z]+)\s(\d{1,2})', text)
+    if match_1:
+        month = match_1.group(1)
+        day = match_1.group(2)
+    
+    match_2 = re.search(r'\d{4}', year)
+    if match_2:
+        year = int(match_2.group(0))  # Convert to integer
+        
+    date_str = f"{day} {month} {year}"
+    date_obj = datetime.strptime(date_str, "%d %b %Y").strftime('%d/%m/%y')
+    
+    return date_obj
+
+
+def process_open_interest_df(df):
+    dt = extract_date_from_csv(df.columns[0], df.columns[1])
+    df.dropna(axis=1, how='all', inplace=True)
+    df.columns = [v.strip() for v in df.iloc[0]]
+    df = df.loc[1:]
+    for column in df.columns:
+        if df[column].apply(pd.to_numeric, errors='coerce').notna().all():
+            df[column] = pd.to_numeric(df[column], errors='coerce')
+    
+    return df, dt
+
+
+def create_index_futures_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+    merged_df["Future Index Long Change"] = merged_df[f"Future Index Long_{cr_dt}"] - merged_df[f"Future Index Long_{prev_dt}"]
+    merged_df["Future Index Short Change"] = merged_df[f"Future Index Short_{cr_dt}"] - merged_df[f"Future Index Short_{prev_dt}"]
+    merged_df['Signal'] = np.where(
+    (merged_df['Future Index Long Change'] - merged_df['Future Index Short Change']) > 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Future Index Long_{cr_dt}", f"Future Index Short_{cr_dt}",  # Current values
+        f"Future Index Long_{prev_dt}", f"Future Index Short_{prev_dt}", 
+        "Future Index Long Change", "Future Index Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    v1 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Index Long_{cr_dt}'].values[0]
+    v2 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Index Short_{prev_dt}'].values[0]
+    long_exposure = round(((v1/(v1+v2))*100),2)
+    return result_df , long_exposure 
+
+
+def create_index_call_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+
+    merged_df["Option Index Call Long Change"] = merged_df[f"Option Index Call Long_{cr_dt}"] - merged_df[f"Option Index Call Long_{prev_dt}"]
+    merged_df["Option Index Call Short Change"] = merged_df[f"Option Index Call Short_{cr_dt}"] - merged_df[f"Option Index Call Short_{prev_dt}"]
+
+    merged_df['Signal'] = np.where(
+    (merged_df['Option Index Call Long Change'] - merged_df['Option Index Call Short Change']) > 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Option Index Call Long_{cr_dt}", f"Option Index Call Short_{cr_dt}",  # Current values
+        f"Option Index Call Long_{prev_dt}", f"Option Index Call Short_{prev_dt}", 
+        "Option Index Call Long Change", "Option Index Call Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    return result_df
+
+
+def create_index_put_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+
+    merged_df["Option Index Put Long Change"] = merged_df[f"Option Index Put Long_{cr_dt}"] - merged_df[f"Option Index Put Long_{prev_dt}"]
+    merged_df["Option Index Put Short Change"] = merged_df[f"Option Index Put Short_{cr_dt}"] - merged_df[f"Option Index Put Short_{prev_dt}"]
+
+    merged_df['Signal'] = np.where(
+    (merged_df['Option Index Put Long Change'] - merged_df['Option Index Put Short Change']) < 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Option Index Put Long_{cr_dt}", f"Option Index Put Short_{cr_dt}",  # Current values
+        f"Option Index Put Long_{prev_dt}", f"Option Index Put Short_{prev_dt}", 
+        "Option Index Put Long Change", "Option Index Put Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    return result_df
+
+
+def create_stock_futures_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+    merged_df["Future Stock Long Change"] = merged_df[f"Future Stock Long_{cr_dt}"] - merged_df[f"Future Stock Long_{prev_dt}"]
+    merged_df["Future Stock Short Change"] = merged_df[f"Future Stock Short_{cr_dt}"] - merged_df[f"Future Stock Short_{prev_dt}"]
+    merged_df['Signal'] = np.where(
+    (merged_df['Future Stock Long Change'] - merged_df['Future Stock Short Change']) > 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Future Stock Long_{cr_dt}", f"Future Stock Short_{cr_dt}",  # Current values
+        f"Future Stock Long_{prev_dt}", f"Future Stock Short_{prev_dt}", 
+        "Future Stock Long Change", "Future Stock Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    v1 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Stock Long_{cr_dt}'].values[0]
+    v2 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Stock Short_{cr_dt}'].values[0]
+    long_exposure = round(((v1/(v1+v2))*100),2)
+    return result_df , long_exposure 
+
+
+def create_stock_call_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+
+    merged_df["Option Stock Call Long Change"] = merged_df[f"Option Stock Call Long_{cr_dt}"] - merged_df[f"Option Stock Call Long_{prev_dt}"]
+    merged_df["Option Stock Call Short Change"] = merged_df[f"Option Stock Call Short_{cr_dt}"] - merged_df[f"Option Stock Call Short_{prev_dt}"]
+
+    merged_df['Signal'] = np.where(
+    (merged_df['Option Stock Call Long Change'] - merged_df['Option Stock Call Short Change']) > 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Option Stock Call Long_{cr_dt}", f"Option Stock Call Short_{cr_dt}",  # Current values
+        f"Option Stock Call Long_{prev_dt}", f"Option Stock Call Short_{prev_dt}", 
+        "Option Stock Call Long Change", "Option Stock Call Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    return result_df
+
+
+def create_stock_put_table(cr_df, prev_df, cr_dt, prev_dt):
+    merged_df = cr_df.merge(prev_df, on="Client Type", suffixes=(f'_{cr_dt}', f'_{prev_dt}'))
+
+    merged_df["Option Stock Put Long Change"] = merged_df[f"Option Stock Put Long_{cr_dt}"] - merged_df[f"Option Stock Put Long_{prev_dt}"]
+    merged_df["Option Stock Put Short Change"] = merged_df[f"Option Stock Put Short_{cr_dt}"] - merged_df[f"Option Stock Put Short_{prev_dt}"]
+
+    merged_df['Signal'] = np.where(
+    (merged_df['Option Stock Put Long Change'] - merged_df['Option Stock Put Short Change']) < 0,
+        'Bullish',
+        'Bearish'
+    )
+    result_df = merged_df[[
+        "Client Type", 
+        f"Option Stock Put Long_{cr_dt}", f"Option Stock Put Short_{cr_dt}",  # Current values
+        f"Option Stock Put Long_{prev_dt}", f"Option Stock Put Short_{prev_dt}", 
+        "Option Stock Put Long Change", "Option Stock Put Short Change", 'Signal' # Daily change
+    ]]
+    result_df.iloc[-1, -1] = ''
+    return result_df
+
+
+def get_styled_html(df):
+    def apply_styles(row):
+        def style_cell(value, is_signal=False, is_currency=False):
+            """Applies styles to table cells, formatting integer currency values and setting background colors for the 'Signal' column."""
+            bg_color = ""
+            if is_signal:
+                if value == "Bullish":
+                    bg_color = "background-color: rgb(106, 168, 79);"
+                elif value == "Bearish":
+                    bg_color = "background-color: rgb(224, 102, 102);"
+
+            # Format integer currency values with commas
+            if is_currency and isinstance(value, int):
+                value = f"{value:,}"  # Format as integer with commas (e.g., 1000000 → 1,000,000)
+
+            return f"<td style='border: 1px solid black; padding: 5px; text-align: center; {bg_color}'>{value}</td>"
+
+        # Detect integer columns dynamically
+        int_columns = row.index[row.map(lambda x: isinstance(x, int))].tolist()
+
+        # Generate row with styles applied
+        row_html = "".join(
+            style_cell(value, is_signal=(col == "Signal"), is_currency=(col in int_columns))
+            for col, value in zip(row.index, row)
+        )
+
+        return f"<tr>{row_html}</tr>"
+    # Apply styles to each row
+    rows = "".join(df.apply(apply_styles, axis=1))
+    
+    # Create the complete table with inline styles
+    html_table = f"""
+    <table style='width: auto; border-collapse: collapse; border: 1px solid black;'>
+        <thead>
+            <tr>
+                {''.join(f"<th style='border: 1px solid black; padding: 5px; text-align: center;'>{col}</th>" for col in df.columns)}
+            </tr>
+        </thead>
+        <tbody>
+            {rows}
+        </tbody>
+    </table>
+    """
+    return html_table
+
+
+def create_html_for_exposure(index_long_exposure, stock_long_exposure):
+    html = f'<tr><td style="vertical-align: middle; text-align: center; padding: 10px;"> FII Net Long Exposure - Index : {index_long_exposure}%</td><td style="vertical-align: middle; text-align: center; padding: 10px;"> FII Net Long Exposure - Stock : {stock_long_exposure}%</td></tr>'
+    return html
+
+
+def create_html_table_with_predefined_html(df_dict_list, extra_table_data):
+    # Ensure the list contains exactly 6 dictionaries
+    if len(df_dict_list) != 6:
+        raise ValueError("The list must contain exactly 6 dictionaries with 'heading' and 'df' keys.")
+    
+    # Initialize the table HTML string
+    table_html = '<table border="1" style="border-collapse: collapse; width: auto; font-family: Arial, sans-serif;">'
+    
+    table_html += extra_table_data
+    
+    # Loop to create the table rows and columns
+    for i in range(3):  # 3 rows
+        table_html += '<tr>'
+        for j in range(2):  # 2 columns
+            index = i * 2 + j  # Calculate the dictionary index
+            if index < len(df_dict_list):
+                heading = df_dict_list[index]['heading']
+                df_html = get_styled_html(df_dict_list[index]['df'])  # HTML string of the DataFrame
+                
+                # Create the table cell with the heading and DataFrame HTML
+                # table_html += f'<td><strong style="text-align: center; display: block; width: 100%;">{heading}</strong><br>{df_html}</td>'
+                table_html += f'''
+                    <td style="vertical-align: middle; text-align: center; padding: 10px;">
+                        <div style="background: lightblue;"><strong>{heading}</strong></div><br>{df_html}
+                    </td>
+                '''
+        table_html += '</tr>'
+    
+    table_html += '</table>'
+    
+    return table_html
+
 
 def loop_question_between_times(start_time="00:00", end_time="23:00", interval=60):
     """
@@ -262,27 +511,48 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
             response.raise_for_status()
             if response.status_code == 200:
                 current_df = handle_file_response(response, today, logger)
-                current_df.dropna(axis=1, how='all', inplace=True)
-                current_df.columns = [v.strip() for v in current_df.iloc[0]]
-                current_df = current_df.loc[1:]
+                current_df, current_date = process_open_interest_df(current_df)
                 break
     
 
     f, fd = check_for_files( eq_section_id="cr_equity_daily_Previous" , der_section_id="cr_deriv_equity_daily_Previous")
-    for file in filtered_docs:
+    for file in fd:
         if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
             response = session.get(file['file_link'])
             response.raise_for_status()
             if response.status_code == 200:
-                previous_df = handle_file_response(response, today, logger)
-                previous_df.dropna(axis=1, how='all', inplace=True)
-                previous_df.columns = [v.strip() for v in previous_df.iloc[0]]
-                previous_df = previous_df.loc[1:]
+                prev_df = handle_file_response(response, today, logger)
+                prev_df, prev_date = process_open_interest_df(prev_df)
                 break
             # return df
+
+
     print('########curren_df')
     print(current_df)
     print('########previous_df')
-    print(previous_df)
+    print(prev_df)
+
+    
+    r1, index_long_exposure = create_index_futures_table(current_df, prev_df, current_date, prev_date)
+    r2 = create_index_call_table(current_df, prev_df, current_date, prev_date)
+    r3 = create_index_put_table(current_df, prev_df, current_date, prev_date)
+    r4, stock_long_exposure = create_stock_futures_table(current_df, prev_df, current_date, prev_date)
+    r5 = create_stock_call_table(current_df, prev_df, current_date, prev_date)
+    r6 = create_stock_put_table(current_df, prev_df, current_date, prev_date)
+
+    extra_table_data = create_html_for_exposure(index_long_exposure, stock_long_exposure)
+    html = create_html_table_with_predefined_html([{'heading': 'Index Futures', 'df': r1},
+                                                {'heading': 'Stock Futures', 'df': r4},
+                                                {'heading': 'Index Call Options', 'df': r2},
+                                                {'heading': 'Stock Call Options', 'df': r5},
+                                                {'heading': 'Index Put Options', 'df': r3},
+                                                {'heading': 'Stock Put Options', 'df': r6}], extra_table_data)
+
+    send_email( 
+                recipient_emails=MAIL_RECIPIENTS,
+                subject='Participant Wise Derivatives Daily Change Summary',
+                body=html,
+                html_body=html)
+    
 # Example usage:
 loop_question_between_times(interval=300)
