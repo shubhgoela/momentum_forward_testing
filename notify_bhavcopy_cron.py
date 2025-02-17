@@ -269,7 +269,7 @@ def create_index_futures_table(cr_df, prev_df, cr_dt, prev_dt):
     ]]
     result_df.iloc[-1, -1] = ''
     v1 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Index Long_{cr_dt}'].values[0]
-    v2 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Index Short_{prev_dt}'].values[0]
+    v2 = result_df.loc[result_df['Client Type'] == 'FII',f'Future Index Short_{cr_dt}'].values[0]
     long_exposure = round(((v1/(v1+v2))*100),2)
     return result_df , long_exposure 
 
@@ -532,7 +532,7 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
     print('########previous_df')
     print(prev_df)
 
-    
+
     r1, index_long_exposure = create_index_futures_table(current_df, prev_df, current_date, prev_date)
     r2 = create_index_call_table(current_df, prev_df, current_date, prev_date)
     r3 = create_index_put_table(current_df, prev_df, current_date, prev_date)
@@ -550,9 +550,10 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
 
     send_email( 
                 recipient_emails=MAIL_RECIPIENTS,
-                subject='Participant Wise Derivatives Daily Change Summary',
+                subject='Participant Wise Derivatives FII-DII Data',
                 body=html,
                 html_body=html)
+
     
 # Example usage:
 loop_question_between_times(interval=300)
