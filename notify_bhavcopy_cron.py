@@ -178,6 +178,7 @@ def get_display_and_file_names(base_url, endpoint, section_id="cr_deriv_equity_d
 def check_for_files( eq_section_id= "cr_equity_daily_Current", der_section_id="cr_deriv_equity_daily_Current"):
 
     filtered_docs = []
+    print(eq_section_id,',',der_section_id)
     logger.info('getting files from derivatives section...')
     # cr_deriv_equity_daily_Previous, cr_deriv_equity_daily_Current
     derivative_file_details = get_display_and_file_names(NSE_base_url, endpoint = '/all-reports-derivatives', section_id = der_section_id)
@@ -585,28 +586,37 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
                 print("The time window has closed. Exiting loop.")
             break
     
-    print(filtered_docs)
-    session = login(NSE_base_url)
-    for file in filtered_docs:
-        if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
-            response = session.get(file['file_link'])
-            response.raise_for_status()
-            if response.status_code == 200:
-                current_df = handle_file_response(response, today, logger)
-                current_df, current_date = process_open_interest_df(current_df)
-                break
     
+    session = login(NSE_base_url)
+    MAX_RETRIES = 5  # Prevent infinite loops
+    retry_count = 0
 
-    f, fd = check_for_files( eq_section_id="cr_equity_daily_Previous" , der_section_id="cr_deriv_equity_daily_Previous")
-    for file in fd:
-        if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
-            response = session.get(file['file_link'])
-            response.raise_for_status()
-            if response.status_code == 200:
-                prev_df = handle_file_response(response, today, logger)
-                prev_df, prev_date = process_open_interest_df(prev_df)
-                break
-            # return df
+    current_df, prev_df = None, None
+
+    while retry_count <= MAX_RETRIES:
+        retry_count += 1
+        for file in filtered_docs:
+            if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
+                response = session.get(file['file_link'])
+                response.raise_for_status()
+                if response.status_code == 200:
+                    current_df = handle_file_response(response, today, logger)
+                    current_df, current_date = process_open_interest_df(current_df)
+                    break
+        
+
+        f, fd = check_for_files( eq_section_id="cr_equity_daily_Previous" , der_section_id="cr_deriv_equity_daily_Previous")
+        for file in fd:
+            if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
+                response = session.get(file['file_link'])
+                response.raise_for_status()
+                if response.status_code == 200:
+                    prev_df = handle_file_response(response, today, logger)
+                    prev_df, prev_date = process_open_interest_df(prev_df)
+                    break
+        
+        if current_df is not None and prev_df is not None:
+            break
 
 
     print('########curren_df')
