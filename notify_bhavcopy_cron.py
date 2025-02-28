@@ -470,66 +470,56 @@ def create_html_table_with_predefined_html(df_dict_list, extra_table_data):
 
 
 def save_html_as_png(html_string, output_file="output.png"):
-    # Encode the HTML string to base64
-    html_string = f"""
-        <html>
-        <head><title>Test</title></head>
-        <body style="height: 3000px;">
-            {html_string}
-        </body>
-        </html>
-        """
-
-    html_string = html_string.replace('\n','')
-
-    encoded_html = base64.b64encode(html_string.encode()).decode()
+    """Captures a full-page screenshot of an HTML string using Chrome DevTools Protocol (CDP)."""
+    
+    # Wrap HTML properly
+    full_html = f"""
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Test</title>
+        <style>
+            body {{ margin: 0; padding: 0; zoom: 1.0; }}
+            ::-webkit-scrollbar {{
+                width: 10px;
+            }}
+            ::-webkit-scrollbar-thumb {{
+                background: gray;
+                border-radius: 5px;
+            }}
+        </style>
+    </head>
+    <body>
+        {html_string}
+    </body>
+    </html>
+    """
+    
+    encoded_html = base64.b64encode(full_html.encode()).decode()
     data_url = f"data:text/html;base64,{encoded_html}"
 
-    # Set up Selenium WebDriver (Make sure you have the correct path to chromedriver)
+    # Set up Selenium WebDriver
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Run in headless mode
+    chrome_options.add_argument("--headless=new")  # Enables full-page screenshot mode
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
-    # Open the HTML page
     driver.get(data_url)
 
-    # Get the actual content width & height
-    total_width = driver.execute_script("return document.body.scrollWidth")
-    total_height = driver.execute_script("return document.body.scrollHeight")
-    viewport_height = driver.execute_script("return window.innerHeight")
-
-    driver.set_window_size(total_width, viewport_height)
-
-    # Time delay to allow full rendering
+    # Give the page time to render
     time.sleep(2)
 
-    # Create a blank canvas image to stitch screenshots
-    stitched_image = Image.new("RGB", (total_width, total_height))
-
-    y_offset = 0
-    scroll_step = viewport_height
-
-    for y in range(0, total_height, scroll_step):
-        # Scroll to the required position
-        driver.execute_script(f"window.scrollTo(0, {y})")
-        time.sleep(1)  # Allow time for rendering
-
-        # Take screenshot and open as Image
-        screenshot = driver.get_screenshot_as_png()
-        screenshot_image = Image.open(io.BytesIO(screenshot))
-
-        # Paste into stitched image
-        stitched_image.paste(screenshot_image, (0, y_offset))
-        y_offset += screenshot_image.height
+    # Use Chrome DevTools Protocol for full-page screenshot
+    screenshot = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True, "fromSurface": True})
     
-    # Close the WebDriver
     driver.quit()
 
-    # Save the final stitched image
-    stitched_image.save(output_file)
+    # Save the screenshot
+    with open(output_file, "wb") as f:
+        f.write(base64.b64decode(screenshot["data"]))
+
     print(f"✅ PNG saved as {output_file}")
 
     return
