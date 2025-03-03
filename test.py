@@ -92,12 +92,12 @@ def test(symbol):
 #     print('value after set')
 #     print(get_cash_balance(strategy[i], 2025,1))
 
-def create_sheet():
+def create_sheet(year, month):
     df1 = pd.DataFrame()
     stock_list = []
     for index in INDEX_LIST:
         for st in STRATEGIES:
-            df = fetch_portfolio(collection_name=f"{st}_{index}", year=2025, month=2)
+            df = fetch_portfolio(collection_name=f"{st}_{index}", year=year, month=month)
             for stock in df['df']['portfolio']:
                 stock_list.append({'strategy': f"{st}_{index}", 
                                    'stock': stock['stock'],
@@ -105,7 +105,8 @@ def create_sheet():
                                    'is_new':None if stock['carry_forward'] else 'NEW',
                                    'entry_price': stock['initial_price'],
                                    'final_price': stock['final_price'],
-                                   'quantity': stock['quantity']
+                                   'quantity': stock['quantity'],
+                                   'status': 'Carry' if stock['returns'] is not None else 'Exit'
                                    })
             # stocks.extend(df['df']['new_added_scripts'])
             # stocks.extend(df['df']['removed_scripts'])
@@ -127,5 +128,6 @@ def create_sheet():
     # df1.to_csv('stock_carry.csv')
 
     df = pd.DataFrame(stock_list)
-    df.to_excel('portfolio_FEB.xlsx')
-create_sheet()
+    df.to_excel('portfolio_MARCH.xlsx')
+
+create_sheet(year=2025, month=3)
