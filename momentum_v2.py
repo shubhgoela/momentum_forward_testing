@@ -21,7 +21,7 @@ STRATEGY = 'V2'
 
 def create_portfolio():
     try:
-        today = datetime(year=2025, month=2, day=1)
+        today = datetime(year=2025, month=3, day=3)
         # today = datetime.now()
         if is_first_trading_day_of_month(today):
             year = today.year
