@@ -357,6 +357,9 @@ def send_email(
         if cc_emails:
             msg['Cc'] = ', '.join(cc_emails)
         
+        if bcc_emails:
+            msg['Bcc'] = ', '.join(bcc_emails)
+        
         # Email body: Add plain text and optional HTML content
         if html_body:
             msg.set_content(body)

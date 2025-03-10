@@ -49,6 +49,8 @@ SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
 BHAVCOPY_FILE_NAMES = ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)', 'Full Bhavcopy and Security Deliverable data']
 MAIL_RECIPIENTS = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com']
+MAIL_RECIPIENTS_REPORT = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com', 'amit.jain1@mnclgroup.com']
+
 
 def run_terminal_command(command):
     """
@@ -637,7 +639,8 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
         pass
 
     send_email( 
-                recipient_emails=MAIL_RECIPIENTS,
+                recipient_emails=['shubh.goela@mnclgroup.com'],
+                bcc_emails=MAIL_RECIPIENTS_REPORT,
                 subject='Participant Wise Derivatives FII-DII Data',
                 body=html,
                 html_body=html,
