@@ -22,6 +22,8 @@ import base64
 import time
 from PIL import Image
 import io
+import json
+
 
 from bhavcopy_login import login
 from logging_config import setup_logging
@@ -438,15 +440,81 @@ def create_html_for_exposure(index_long_exposure, stock_long_exposure):
     return html
 
 
-def create_html_table_with_predefined_html(df_dict_list, extra_table_data):
+def get_commentry(r1, index_long_exposure):
+    filename = 'data.json'
+
+    def save_file(index_long_exposure):
+        data = {"index_long_exposure": index_long_exposure}
+        with open(filename, "w") as file:
+            json.dump(data, file, indent=4)
+        return
+
+    def get_file():
+        with open(filename, "r") as file:
+            return json.load(file)
+    
+    commentry = []
+    fii_long_change = r1.loc[r1['Client Type'] == 'FII','Future Index Long Change'].values[0]
+    fii_short_change = r1.loc[r1['Client Type'] == 'FII','Future Index Short Change'].values[0]
+    if (fii_long_change > 0 and fii_short_change > 0):
+        if (fii_long_change > fii_short_change):
+            commentry.append('Net long addition today.')
+        elif (fii_long_change < fii_short_change):
+            commentry.append('Net short addition today.')
+        else:
+            commentry.append('Equal long and short addition today.')
+
+    elif (fii_long_change < 0 and fii_short_change < 0):
+        if (fii_long_change > fii_short_change):
+            commentry.append('Net short unwinding today.')
+        elif (fii_long_change < fii_short_change):
+            commentry.append('Net long unwinding today.')
+        else:
+            commentry.append('Equal long and short unwinding today.')
+
+    else:
+        if (fii_long_change > fii_short_change):
+            commentry.append('Net long addition and short unwinding today.')
+        elif (fii_long_change < fii_short_change):
+            commentry.append('Net short addition and long unwinding today.')
+        else:
+            commentry.append('No change in net long and short today.')
+
+
+    loaded_data = get_file()
+    
+    prev_index_long_exposure = loaded_data['index_long_exposure']
+    if prev_index_long_exposure > index_long_exposure:
+        commentry.append(f'Net long exposure decreases to {index_long_exposure}%.')
+    elif prev_index_long_exposure < index_long_exposure:
+        change = round(index_long_exposure - prev_index_long_exposure, 2)
+        commentry.append(f'Net long exposure increases to {index_long_exposure}%.')
+    else:
+        commentry.append('No change in net long exposure.')
+
+    save_file(index_long_exposure)
+
+    html_commentry = ''
+    for comment in commentry:
+        html_commentry += f'<b>{comment}</b><br>'
+    
+    # html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
+    html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px; font-size: 16px; font-weight: bold;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
+
+    return html_commentry
+
+
+def create_html_table_with_predefined_html(df_dict_list, extra_table_data, commentry):
     # Ensure the list contains exactly 6 dictionaries
     if len(df_dict_list) != 6:
         raise ValueError("The list must contain exactly 6 dictionaries with 'heading' and 'df' keys.")
     
     # Initialize the table HTML string
+
     table_html = '<table border="1" style="border-collapse: collapse; width: auto; font-family: Arial, sans-serif;">'
     
-    table_html += extra_table_data
+    table_html += commentry
+    # table_html += extra_table_data
     
     # Loop to create the table rows and columns
     for i in range(3):  # 3 rows
@@ -625,12 +693,13 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
     r6 = create_stock_put_table(current_df, prev_df, current_date, prev_date)
 
     extra_table_data = create_html_for_exposure(index_long_exposure, stock_long_exposure)
+    commentry = get_commentry(r1, index_long_exposure)
     html = create_html_table_with_predefined_html([{'heading': 'Index Futures', 'df': r1},
                                                 {'heading': 'Stock Futures', 'df': r4},
                                                 {'heading': 'Index Call Options', 'df': r2},
                                                 {'heading': 'Stock Call Options', 'df': r5},
                                                 {'heading': 'Index Put Options', 'df': r3},
-                                                {'heading': 'Stock Put Options', 'df': r6}], extra_table_data)
+                                                {'heading': 'Stock Put Options', 'df': r6}], extra_table_data, commentry)
 
     try:
         save_html_as_png(html_string=html)
