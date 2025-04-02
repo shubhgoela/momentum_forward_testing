@@ -20,7 +20,7 @@ STRATEGIES = ['V1', 'V2', 'V3','V4']
 INDEX_LIST = os.getenv('INDEX_LIST').split(',')
 
 def execute_order():
-    today = datetime(year=2025, month=3, day=3)
+    today = datetime(year=2025, month=4, day=1)
     # today = datetime.now() 
 
     if not is_first_trading_day_of_month(today):
