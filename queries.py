@@ -2,6 +2,7 @@ import os
 from dotenv import find_dotenv, load_dotenv
 from datetime import datetime
 from pymongo import MongoClient
+import certifi
 
 from enums import *
 
@@ -11,7 +12,7 @@ load_dotenv(dotenv_path=dotenv_path, override=True)
 DB_URI = os.getenv('DB_URI')
 DB_NAME = os.getenv('DB_NAME')
 
-client = MongoClient(DB_URI)
+client = MongoClient(DB_URI, tlsCAFile=certifi.where())
 
 db = client[DB_NAME]
 

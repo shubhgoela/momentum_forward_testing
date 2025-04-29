@@ -12,7 +12,7 @@ import random
 from dotenv import find_dotenv, load_dotenv
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 import subprocess
 import re
@@ -23,12 +23,13 @@ import time
 from PIL import Image
 import io
 import json
+import calendar
 
 
 from bhavcopy_login import login
 from logging_config import setup_logging
 from bhavcopy_utils import generate_html_table, send_email, handle_file_response
-from queries import get_mail_template
+from queries import get_mail_template, get_holidays_for_year, get_exception_trading_dates_to_year
 
 
 dotenv_path = find_dotenv()
@@ -389,6 +390,143 @@ def create_stock_put_table(cr_df, prev_df, cr_dt, prev_dt):
     return result_df
 
 
+def get_weekdays_after_date(year, weekday, after_date):
+    """
+    Get the first two dates for a given weekday in a specific year that are after a particular date.
+    
+    year: int, the year to get weekdays for.
+    weekday_str: str, the weekday name ('Monday', 'Tuesday', ..., 'Sunday')
+    after_date: str, the date string in the format 'YYYY-MM-DD' after which to filter.
+    """
+    # Convert weekday string to integer using calendar
+    if weekday not in calendar.day_name:
+        raise ValueError("Invalid weekday string. Use 'Monday', 'Tuesday', ..., 'Sunday'.")
+    
+    weekday = list(calendar.day_name).index(weekday)
+    
+    # Start from the first day of the year
+    start_date = datetime(year, 1, 1)
+    
+    # Find the first occurrence of the desired weekday
+    days_to_weekday = (weekday - start_date.weekday()) % 7  # Calculate days to desired weekday
+    first_weekday = start_date + timedelta(days=days_to_weekday)
+    
+    # Collect all occurrences of the desired weekday
+    weekdays = []
+    current_date = first_weekday
+    while current_date.year == year:
+        if current_date.date() > after_date:  # Filter dates after the given date
+            weekdays.append(current_date.date())
+        current_date += timedelta(weeks=1)  # Move to the next weekday of the same type
+    
+    # Return the first two filtered weekdays
+    return weekdays[:2]
+
+
+def get_expiry_dates(ref_date=None, weekly_day='Thursday', monthly_day='Thursday'):
+    if ref_date is None:
+        ref_date = datetime.today()
+    elif isinstance(ref_date, str):
+        ref_date = datetime.strptime(ref_date, "%Y-%m-%d")
+
+    ref_date = ref_date.date()
+    year, month = ref_date.year, ref_date.month
+
+    # Load holidays and exception trading dates
+    holiday_dates = get_holidays_for_year(year)
+    exception_trading_dates = get_exception_trading_dates_to_year(year)
+
+    holiday_dates = [] if holiday_dates is None else [d.date() for d in set(holiday_dates['dates'])]
+    exception_trading_dates = [] if exception_trading_dates is None else [d.date() for d in set(exception_trading_dates['dates'])]
+    
+    def is_trading_day(d):
+        return (
+            d in exception_trading_dates or
+            (d.weekday() < 5 and d not in holiday_dates)
+        )
+
+    def get_prev_trading_day(start_date):
+        while not is_trading_day(start_date):
+            start_date -= timedelta(days=1)
+        return start_date
+
+    weekly_target = list(calendar.day_name).index(weekly_day)
+    monthly_target = list(calendar.day_name).index(monthly_day)
+    
+    # --- Part 1: Weekly expiry (updated with your provided logic) ---
+    next_2_expiries = get_weekdays_after_date(year=ref_date.year, weekday=weekly_day, after_date=ref_date)
+
+    next_weekly_expiry = get_prev_trading_day(next_2_expiries[0])
+
+    if next_weekly_expiry == ref_date:
+        next_weekly_expiry = next_2_expiries[-1]
+
+    # --- Part 2: Monthly expiry (your original) ---
+    while True:
+        last_day = calendar.monthrange(year, month)[1]
+        last_expiry = datetime(year, month, last_day).date()
+
+        while last_expiry.weekday() != monthly_target:
+            last_expiry -= timedelta(days=1)
+
+        last_expiry = get_prev_trading_day(last_expiry)
+
+        if last_expiry >= ref_date:
+            break
+        else:
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+
+    return next_weekly_expiry, last_expiry
+
+
+def create_OI_table(fo_bhav_copy, XpryDts, index):
+    df = pd.DataFrame()
+    df[index] = ['Max Call OI','Max Put OI', 'Change in Call OI max', 'Change in Put OI max']
+    df['Option Type'] = ['CE','PE','CE','PE']
+
+    for date in XpryDts:
+        
+        nifty_call = fo_bhav_copy[(fo_bhav_copy['XpryDt'] == date.strftime('%Y-%m-%d')) & (fo_bhav_copy['TckrSymb'] == index)  & (fo_bhav_copy['OptnTp'] == 'CE')]
+        nifty_call = nifty_call.loc[nifty_call['OpnIntrst'].idxmax()]['StrkPric']
+
+
+        nifty_put = fo_bhav_copy[(fo_bhav_copy['XpryDt'] == date.strftime('%Y-%m-%d')) & (fo_bhav_copy['TckrSymb'] == index)  & (fo_bhav_copy['OptnTp'] == 'PE')]
+        nifty_put = nifty_put.loc[nifty_put['OpnIntrst'].idxmax()]['StrkPric']
+
+        nifty_call_max_oi_chng = fo_bhav_copy[(fo_bhav_copy['XpryDt'] == date.strftime('%Y-%m-%d')) & (fo_bhav_copy['TckrSymb'] == index)  & (fo_bhav_copy['OptnTp'] == 'CE')]
+        nifty_call_max_oi_chng = nifty_call_max_oi_chng.loc[nifty_call_max_oi_chng['ChngInOpnIntrst'].idxmax()]['StrkPric']
+
+
+        nifty_put_max_oi_chng = fo_bhav_copy[(fo_bhav_copy['XpryDt'] == date.strftime('%Y-%m-%d')) & (fo_bhav_copy['TckrSymb'] == index)  & (fo_bhav_copy['OptnTp'] == 'PE')]
+        nifty_put_max_oi_chng = nifty_put_max_oi_chng.loc[nifty_put_max_oi_chng['ChngInOpnIntrst'].idxmax()]['StrkPric']
+
+        df[date.strftime('%d-%b')] = [nifty_call, nifty_put, nifty_call_max_oi_chng, nifty_put_max_oi_chng]
+
+    return df
+
+
+def get_pcr(fo_bhav_copy, XpryDt, index, ref_date = None):
+    if ref_date is None:
+        ref_date = datetime.today()
+    elif isinstance(ref_date, str):
+        ref_date = datetime.strptime(ref_date, "%Y-%m-%d")
+
+    if ref_date.date() == XpryDt:
+        fo_data_filterd = fo_bhav_copy[(fo_bhav_copy['XpryDt'] != ref_date.strftime('%Y-%m-%d')) & (fo_bhav_copy['TckrSymb'] == index)]
+    else:
+        fo_data_filterd = fo_bhav_copy[(fo_bhav_copy['TckrSymb'] == index)]
+
+    fo_data_filterd_ce = fo_data_filterd[(fo_data_filterd['OptnTp'] == 'CE')]
+    fo_data_filterd_pe = fo_data_filterd[(fo_data_filterd['OptnTp'] == 'PE')]
+
+    # return fo_data_filterd, fo_data_filterd_ce, fo_data_filterd_pe
+    return fo_data_filterd_pe['OpnIntrst'].sum()/ fo_data_filterd_ce['OpnIntrst'].sum()
+
+
 def get_styled_html(df):
     def apply_styles(row):
         def style_cell(value, is_signal=False, is_currency=False):
@@ -439,12 +577,88 @@ def create_html_for_exposure(index_long_exposure, stock_long_exposure):
     html = f'<tr><td style="vertical-align: middle; text-align: center; padding: 10px;"> FII Net Long Exposure - Index : {index_long_exposure}%</td><td style="vertical-align: middle; text-align: center; padding: 10px;"> FII Net Long Exposure - Stock : {stock_long_exposure}%</td></tr>'
     return html
 
+# ---- deprecated ----
+# def get_commentry(r1, index_long_exposure):
+#     filename = 'data.json'
 
-def get_commentry(r1, index_long_exposure):
+#     def save_file(index_long_exposure):
+#         data = {"index_long_exposure": index_long_exposure}
+#         with open(filename, "w") as file:
+#             json.dump(data, file, indent=4)
+#         return
+
+#     def get_file():
+#         with open(filename, "r") as file:
+#             return json.load(file)
+    
+#     commentry = []
+#     fii_long_change = r1.loc[r1['Client Type'] == 'FII','Future Index Long Change'].values[0]
+#     fii_short_change = r1.loc[r1['Client Type'] == 'FII','Future Index Short Change'].values[0]
+#     if (fii_long_change > 0 and fii_short_change > 0):
+#         if (fii_long_change > fii_short_change):
+#             commentry.append('Net long addition today.')
+#         elif (fii_long_change < fii_short_change):
+#             commentry.append('Net short addition today.')
+#         else:
+#             commentry.append('Equal long and short addition today.')
+
+#     elif (fii_long_change < 0 and fii_short_change < 0):
+#         if (fii_long_change > fii_short_change):
+#             commentry.append('Net short unwinding today.')
+#         elif (fii_long_change < fii_short_change):
+#             commentry.append('Net long unwinding today.')
+#         else:
+#             commentry.append('Equal long and short unwinding today.')
+
+#     else:
+#         if (fii_long_change > fii_short_change):
+#             commentry.append('Net long addition and short unwinding today.')
+#         elif (fii_long_change < fii_short_change):
+#             commentry.append('Net short addition and long unwinding today.')
+#         else:
+#             commentry.append('No change in net long and short today.')
+
+
+#     loaded_data = get_file()
+    
+#     prev_index_long_exposure = loaded_data['index_long_exposure']
+#     if prev_index_long_exposure > index_long_exposure:
+#         commentry.append(f'Net long exposure decreases to {index_long_exposure}%.')
+#     elif prev_index_long_exposure < index_long_exposure:
+#         change = round(index_long_exposure - prev_index_long_exposure, 2)
+#         commentry.append(f'Net long exposure increases to {index_long_exposure}%.')
+#     else:
+#         commentry.append('No change in net long exposure.')
+
+#     save_file(index_long_exposure)
+
+#     html_commentry = ''
+#     for comment in commentry:
+#         html_commentry += f'<b>{comment}</b><br>'
+    
+#     # html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
+#     html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px; font-size: 16px; font-weight: bold;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
+
+#     return html_commentry
+
+def get_commentry(index_futures, index_participent_ce, index_participent_pe,  index_long_exposure, pcr, OI_table, week_expry, month_expry):
     filename = 'data.json'
 
-    def save_file(index_long_exposure):
-        data = {"index_long_exposure": index_long_exposure}
+    def save_file(key, value):
+        # Check if file exists and load existing data
+        if os.path.exists(filename):
+            with open(filename, "r") as file:
+                try:
+                    data = json.load(file)
+                except json.JSONDecodeError:
+                    data = {}
+        else:
+            data = {}
+
+        # Update or add the key-value pair
+        data[key] = value
+
+        # Save back to file
         with open(filename, "w") as file:
             json.dump(data, file, indent=4)
         return
@@ -453,56 +667,145 @@ def get_commentry(r1, index_long_exposure):
         with open(filename, "r") as file:
             return json.load(file)
     
-    commentry = []
-    fii_long_change = r1.loc[r1['Client Type'] == 'FII','Future Index Long Change'].values[0]
-    fii_short_change = r1.loc[r1['Client Type'] == 'FII','Future Index Short Change'].values[0]
-    if (fii_long_change > 0 and fii_short_change > 0):
-        if (fii_long_change > fii_short_change):
-            commentry.append('Net long addition today.')
-        elif (fii_long_change < fii_short_change):
-            commentry.append('Net short addition today.')
-        else:
-            commentry.append('Equal long and short addition today.')
-
-    elif (fii_long_change < 0 and fii_short_change < 0):
-        if (fii_long_change > fii_short_change):
-            commentry.append('Net short unwinding today.')
-        elif (fii_long_change < fii_short_change):
-            commentry.append('Net long unwinding today.')
-        else:
-            commentry.append('Equal long and short unwinding today.')
-
-    else:
-        if (fii_long_change > fii_short_change):
-            commentry.append('Net long addition and short unwinding today.')
-        elif (fii_long_change < fii_short_change):
-            commentry.append('Net short addition and long unwinding today.')
-        else:
-            commentry.append('No change in net long and short today.')
-
+    commentry = [f"*Derivatives data – Brief commentary {datetime.now().strftime('%d %b%y')}*"]
 
     loaded_data = get_file()
     
     prev_index_long_exposure = loaded_data['index_long_exposure']
+    prev_index_pcr = loaded_data['pcr']
+    prev_date = loaded_data['prev_date']
+
+
+    week_expry_formated = week_expry.strftime("%d-%b")
+    max_oi_ce_we = OI_table.loc[OI_table['NIFTY'] == 'Max Call OI', week_expry_formated].iloc[0]
+    max_oi_pe_we = OI_table.loc[OI_table['NIFTY'] == 'Max Put OI', week_expry_formated].iloc[0]
+    max_oi_addition_ce_we = OI_table.loc[OI_table['NIFTY'] == 'Change in Call OI max', week_expry_formated].iloc[0]
+    max_oi_addition_pe_we = OI_table.loc[OI_table['NIFTY'] == 'Change in Put OI max', week_expry_formated].iloc[0]
+
+    month_expry_formated = month_expry.strftime("%d-%b")
+    max_oi_ce_me = OI_table.loc[OI_table['NIFTY'] == 'Max Call OI', month_expry_formated].iloc[0]
+    max_oi_pe_me = OI_table.loc[OI_table['NIFTY'] == 'Max Put OI', month_expry_formated].iloc[0]
+    max_oi_addition_ce_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Call OI max', month_expry_formated].iloc[0]
+    max_oi_addition_pe_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Put OI max', month_expry_formated].iloc[0]
+
+    commentry.append(f'•For weekly ({week_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_we)} call and {int(max_oi_addition_pe_we)} put. Max OI is at {int(max_oi_ce_we)} call and {int(max_oi_pe_we)} put. For Monthly expiry ({month_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_me)} call and {int(max_oi_addition_pe_me)} put. Max OI is at {int(max_oi_ce_me)} call and {int(max_oi_pe_me)} put.')
+    
+    commentry.append(f'• Cumulative Nifty PCR stands at {round(pcr,2)} ({datetime.now().strftime("%d %b%y")}) Vs {prev_index_pcr} ({prev_date})')
+    
+    FII_sentiment = 'Positive' if index_futures.loc[index_futures['Client Type'] == 'FII','Signal'].values[0] == 'Bullish' else 'Negative'
+    commentry.append(f"*Overall FII derivatives data is {FII_sentiment} for {datetime.now().strftime('%A')} ({datetime.now().strftime('%d %b%y')})")
+
+    final_commentry = 'In Index futures, there was '
+
+    fii_long_change = index_futures.loc[index_futures['Client Type'] == 'FII','Future Index Long Change'].values[0]
+    fii_short_change = index_futures.loc[index_futures['Client Type'] == 'FII','Future Index Short Change'].values[0]
+    if (fii_long_change > 0 and fii_short_change > 0):
+        if (fii_long_change > fii_short_change):
+            final_commentry += 'net long addition today,'
+        elif (fii_long_change < fii_short_change):
+            final_commentry += 'net short addition today,'
+        else:
+            final_commentry += 'equal long and short addition today,'
+
+    elif (fii_long_change < 0 and fii_short_change < 0):
+        if (fii_long_change > fii_short_change):
+            final_commentry += 'net short unwinding today,'
+        elif (fii_long_change < fii_short_change):
+            final_commentry += 'net long unwinding today,'
+        else:
+            final_commentry += 'equal long and short unwinding today,'
+
+    else:
+        if (fii_long_change > fii_short_change):
+            final_commentry += 'net long addition and short unwinding today,'
+        elif (fii_long_change < fii_short_change):
+            final_commentry += 'net short addition and long unwinding today,'
+        else:
+            final_commentry += 'no change in net long and short today,'
+
+
     if prev_index_long_exposure > index_long_exposure:
-        commentry.append(f'Net long exposure decreases to {index_long_exposure}%.')
+        final_commentry += f" with Net long exposure decreasing to {index_long_exposure}% ({datetime.now().strftime('%d %b%y')}) Vs {prev_index_long_exposure}% ({prev_date}). "
     elif prev_index_long_exposure < index_long_exposure:
         change = round(index_long_exposure - prev_index_long_exposure, 2)
-        commentry.append(f'Net long exposure increases to {index_long_exposure}%.')
+        final_commentry += f" with Net long exposure increasing to {index_long_exposure}% ({datetime.now().strftime('%d %b%y')}) Vs {prev_index_long_exposure}% ({prev_date}). "
     else:
-        commentry.append('No change in net long exposure.')
+        final_commentry += ' with no change in net long exposure. '
 
-    save_file(index_long_exposure)
+    final_commentry += 'In index options, there was '
+
+
+    fii_ce_long_change = index_participent_ce.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Call Long Change'].values[0]
+    fii_ce_short_change = index_participent_ce.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Call Short Change'].values[0]
+
+    fii_pe_long_change = index_participent_pe.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Put Long Change'].values[0]
+    fii_pe_short_change = index_participent_pe.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Put Short Change'].values[0]
+
+    if (fii_ce_long_change > 0 and fii_ce_short_change > 0):
+        final_commentry += 'net addition in call options'
+        if (fii_ce_long_change > fii_ce_short_change):
+            final_commentry += ' - long side and '
+        elif (fii_ce_long_change < fii_ce_short_change):
+            final_commentry += '- short side and '
+        else:
+            final_commentry += 'equal long and short addition today and '
+
+    elif (fii_ce_long_change < 0 and fii_ce_short_change < 0):
+        final_commentry += 'net uwinding in call options'
+        if (fii_ce_long_change > fii_ce_short_change):
+            final_commentry += '- short side and '
+        elif (fii_ce_long_change < fii_ce_short_change):
+            final_commentry += '- long side and '
+        else:
+            final_commentry += 'equal long and short unwinding today and '
+
+    else:
+        if (fii_ce_long_change > fii_ce_short_change):
+            final_commentry += 'net long addition and short unwinding in call options today and '
+        elif (fii_ce_long_change < fii_ce_short_change):
+            final_commentry += 'net short addition and long unwinding in call options today and '
+        else:
+            final_commentry += 'no change in net long and short in call options today and '
+
+    if (fii_pe_long_change > 0 and fii_pe_short_change > 0):
+        final_commentry += 'net addition in put options'
+        if (fii_pe_long_change > fii_pe_short_change):
+            final_commentry += ' - long side,'
+        elif (fii_pe_long_change < fii_pe_short_change):
+            final_commentry += '- short side'
+        else:
+            final_commentry += 'equal long and short addition today.'
+
+    elif (fii_pe_long_change < 0 and fii_pe_short_change < 0):
+        final_commentry += 'net uwinding in put options'
+        if (fii_pe_long_change > fii_pe_short_change):
+            final_commentry += '- short side'
+        elif (fii_pe_long_change < fii_pe_short_change):
+            final_commentry += '- long side'
+        else:
+            final_commentry += 'equal long and short unwinding today.'
+
+    else:
+        if (fii_pe_long_change > fii_pe_short_change):
+            final_commentry += 'net long addition and short unwinding in put options today.'
+        elif (fii_pe_long_change < fii_pe_short_change):
+            final_commentry += 'net short addition and long unwinding in put options today.'
+        else:
+            final_commentry += 'no change in net long and short in put options today.'
+
+    commentry.append(final_commentry)
+    save_file('index_long_exposure', index_long_exposure)
+    save_file('pcr', round(pcr,2))
+    save_file('prev_date',datetime.now().strftime("%d %b%y") )
 
     html_commentry = ''
     for comment in commentry:
-        html_commentry += f'<b>{comment}</b><br>'
+        html_commentry += f'<b>{comment}</b><br><br>'
     
     # html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
-    html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px; font-size: 16px; font-weight: bold;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
+    html_commentry = f'<tr><td colspan="2" style="vertical-align: middle; text-align: left; padding: 10px; font-size: 16px; font-weight: bold;"> {html_commentry} </td></tr>'
 
     return html_commentry
-
 
 def create_html_table_with_predefined_html(df_dict_list, extra_table_data, commentry):
     # Ensure the list contains exactly 6 dictionaries
@@ -662,8 +965,16 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
                 if response.status_code == 200:
                     current_df = handle_file_response(response, today, logger)
                     current_df, current_date = process_open_interest_df(current_df)
-                    break
-        
+            
+            if file['display_name'] == 'F&O-UDiFF Common Bhavcopy Final (zip)':
+                response = session.get(file['file_link'])
+                response.raise_for_status()
+                if response.status_code == 200:
+                    curr_fo_bhav = handle_file_response(response, today, logger)
+
+            if current_df is not None and curr_fo_bhav is not None:
+                break
+            
 
         f, fd = check_for_files( eq_section_id="cr_equity_daily_Previous" , der_section_id="cr_deriv_equity_daily_Previous")
         for file in fd:
@@ -692,8 +1003,16 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
     r5 = create_stock_call_table(current_df, prev_df, current_date, prev_date)
     r6 = create_stock_put_table(current_df, prev_df, current_date, prev_date)
 
+
+
+    week_expry, month_expry = get_expiry_dates()
+    OI_table = create_OI_table(curr_fo_bhav, [week_expry, month_expry], 'NIFTY')
+    nifty_pcr = get_pcr(curr_fo_bhav, XpryDt = week_expry, index = 'NIFTY' )
+
+
     extra_table_data = create_html_for_exposure(index_long_exposure, stock_long_exposure)
-    commentry = get_commentry(r1, index_long_exposure)
+    # commentry = get_commentry(r1, index_long_exposure)
+    commentry = get_commentry(r1, r2, r3, index_long_exposure, nifty_pcr, OI_table, week_expry, month_expry)
     html = create_html_table_with_predefined_html([{'heading': 'Index Futures', 'df': r1},
                                                 {'heading': 'Stock Futures', 'df': r4},
                                                 {'heading': 'Index Call Options', 'df': r2},
