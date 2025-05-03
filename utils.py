@@ -33,7 +33,7 @@ TOP_N_STOCKS = {
     'MNCL': 20,
     'NIFTY_NEXT_50': 20,
     'DERIVATIVES': 20,
-    'NSE': 50
+    'NSE': 100
 }
 
 def load_and_set_data(file_path, data_type='PRICE'):
