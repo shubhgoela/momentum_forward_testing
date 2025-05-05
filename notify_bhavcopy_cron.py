@@ -688,8 +688,8 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
     max_oi_addition_ce_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Call OI max', month_expry_formated].iloc[0]
     max_oi_addition_pe_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Put OI max', month_expry_formated].iloc[0]
 
-    commentry.append(f'•For weekly ({week_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_we)} call and {int(max_oi_addition_pe_we)} put. Max OI is at {int(max_oi_ce_we)} call and {int(max_oi_pe_we)} put. For Monthly expiry ({month_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_me)} call and {int(max_oi_addition_pe_me)} put. Max OI is at {int(max_oi_ce_me)} call and {int(max_oi_pe_me)} put.')
-    
+    commentry.append(f'•For weekly ({week_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_we)} call and {int(max_oi_addition_pe_we)} put. Max OI is at {int(max_oi_ce_we)} call and {int(max_oi_pe_we)} put.')
+    commentry.append(f' For Monthly expiry ({month_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_me)} call and {int(max_oi_addition_pe_me)} put. Max OI is at {int(max_oi_ce_me)} call and {int(max_oi_pe_me)} put.')
     commentry.append(f'• Cumulative Nifty PCR stands at {round(pcr,2)} ({datetime.now().strftime("%d %b%y")}) Vs {prev_index_pcr} ({prev_date})')
     
     FII_sentiment = 'Positive' if index_futures.loc[index_futures['Client Type'] == 'FII','Signal'].values[0] == 'Bullish' else 'Negative'
@@ -732,7 +732,9 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
     else:
         final_commentry += ' with no change in net long exposure. '
 
-    final_commentry += 'In index options, there was '
+    commentry.append(final_commentry)
+
+    final_commentry = 'In index options, there was '
 
 
     fii_ce_long_change = index_participent_ce.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Call Long Change'].values[0]
