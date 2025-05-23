@@ -52,7 +52,10 @@ SMTP_SERVER = os.getenv('SMTP_SERVER')
 SMTP_PORT = int(os.getenv('SMTP_PORT'))
 BHAVCOPY_FILE_NAMES = ['F&O-UDiFF Common Bhavcopy Final (zip)', 'F&O-Participant wise Open Interest (csv)', 'Full Bhavcopy and Security Deliverable data']
 MAIL_RECIPIENTS = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com']
-MAIL_RECIPIENTS_REPORT = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com', 'amit.jain1@mnclgroup.com']
+MAIL_RECIPIENTS_REPORT = ['gaurav.bhandari@mnclgroup.com',
+                          'goela.shubh@gmail.com', 'shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 
+                          'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com', 
+                          'amit.jain1@mnclgroup.com', 'arpan.shah@mnclgroup.com']
 
 
 def run_terminal_command(command):
@@ -688,8 +691,8 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
     max_oi_addition_ce_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Call OI max', month_expry_formated].iloc[0]
     max_oi_addition_pe_me = OI_table.loc[OI_table['NIFTY'] == 'Change in Put OI max', month_expry_formated].iloc[0]
 
-    commentry.append(f'•For weekly ({week_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_we)} call and {int(max_oi_addition_pe_we)} put. Max OI is at {int(max_oi_ce_we)} call and {int(max_oi_pe_we)} put.')
-    commentry.append(f' For Monthly expiry ({month_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_me)} call and {int(max_oi_addition_pe_me)} put. Max OI is at {int(max_oi_ce_me)} call and {int(max_oi_pe_me)} put.')
+    commentry.append(f'•For weekly ({week_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_we)} call and {int(max_oi_addition_pe_we)} put. Max OI is at {int(max_oi_ce_we)} call and {int(max_oi_pe_we)} put. <br> \
+                     For Monthly expiry ({month_expry.strftime("%d %b")}), max OI addition was seen at {int(max_oi_addition_ce_me)} call and {int(max_oi_addition_pe_me)} put. Max OI is at {int(max_oi_ce_me)} call and {int(max_oi_pe_me)} put.')
     commentry.append(f'• Cumulative Nifty PCR stands at {round(pcr,2)} ({datetime.now().strftime("%d %b%y")}) Vs {prev_index_pcr} ({prev_date})')
     
     FII_sentiment = 'Positive' if index_futures.loc[index_futures['Client Type'] == 'FII','Signal'].values[0] == 'Bullish' else 'Negative'
@@ -731,10 +734,9 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
         final_commentry += f" with Net long exposure increasing to {index_long_exposure}% ({datetime.now().strftime('%d %b%y')}) Vs {prev_index_long_exposure}% ({prev_date}). "
     else:
         final_commentry += ' with no change in net long exposure. '
+        
 
-    commentry.append(final_commentry)
-
-    final_commentry = 'In index options, there was '
+    final_commentry += '<br>In index options, there was '
 
 
     fii_ce_long_change = index_participent_ce.loc[index_participent_ce['Client Type'] == 'FII', 'Option Index Call Long Change'].values[0]
@@ -805,7 +807,7 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
         html_commentry += f'<b>{comment}</b><br><br>'
     
     # html_commentry = f'<tr><td style="vertical-align: middle; text-align: left; padding: 10px;"> {html_commentry} </td><td style="vertical-align: middle; text-align: center; padding: 10px;"></td></tr>'
-    html_commentry = f'<tr><td colspan="2" style="vertical-align: middle; text-align: left; padding: 10px; font-size: 16px; font-weight: bold;"> {html_commentry} </td></tr>'
+    html_commentry = f'<tr><td colspan="2" style="vertical-align: middle; text-align: left; padding: 10px; font-size: 20px; font-weight: bold;"> {html_commentry} </td></tr>'
 
     return html_commentry
 
@@ -956,7 +958,7 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
     MAX_RETRIES = 5  # Prevent infinite loops
     retry_count = 0
 
-    current_df, prev_df = None, None
+    current_df, prev_df, curr_fo_bhav = None, None, None
 
     while retry_count <= MAX_RETRIES:
         retry_count += 1
