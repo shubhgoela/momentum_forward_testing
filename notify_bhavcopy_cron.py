@@ -947,7 +947,7 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
                 filtered_docs = [dict(t) for t in filtered_docs]
 
             print('sleeping...')
-            time.sleep(30)
+            time.sleep(interval)
         else:
             if now > end:
                 print("The time window has closed. Exiting loop.")
@@ -1040,5 +1040,29 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
 
     delete_file('output.png')
 
-# Example usage:
-loop_question_between_times(interval=300)
+    return True
+
+def daily_runner():
+    last_processed_date = None
+
+    while True:
+        now = datetime.now()
+        today_str = now.strftime('%Y-%m-%d')
+        start_time = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        end_time = now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+        if start_time <= now <= end_time and today_str != last_processed_date:
+            print(f"Running process for {today_str}")
+            try:
+                result = loop_question_between_times()
+                if result:
+                    last_processed_date = today_str
+            except Exception as e:
+                print(f"Error processing data for {today_str}: {e}")
+        else:
+            print(f"Waiting... ({now.strftime('%H:%M:%S')})")
+        time.sleep(3600) # seconds
+
+
+if __name__ == "__main__":
+    daily_runner()
