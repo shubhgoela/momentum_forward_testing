@@ -152,21 +152,6 @@ def handle_bhav_copy_response(response, date, bhav_copy_logger):
         raise Exception(str(e))
 
 
-def get_valid_dates(start_year, start_month, start_day):
-    # Create a datetime object for the start date
-    valid_dates = []
-    start_date = datetime(start_year, start_month, start_day).date()
-    holiday_dates = [datetime.strptime(date, '%A, %d %B %Y').date() for date in holiday_strings]
-    end_date = datetime.now().date()
-    current_date = start_date
-    while current_date <= end_date:
-        if (calendar.day_abbr[current_date.weekday()] not in ['Sat', 'Sun']) and (current_date not in holiday_dates):
-            valid_dates.append(current_date.isoformat())
-        current_date += timedelta(days=1)
-
-    return valid_dates
-
-
 def create_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -462,3 +447,10 @@ def handle_file_response(response, date, logger):
         
     except Exception as e:
         raise Exception(str(e))
+    
+
+def get_next_valid_trading_datetime(current_datetime):
+    next_date = current_datetime + timedelta(days=1)
+    while not is_valid_date(next_date):
+        next_date += timedelta(days=1)
+    return next_date.replace(hour=16, minute=0, second=0, microsecond=0)

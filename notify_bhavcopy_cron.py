@@ -28,7 +28,8 @@ import calendar
 
 from bhavcopy_login import login
 from logging_config import setup_logging
-from bhavcopy_utils import generate_html_table, send_email, handle_file_response
+from bhavcopy_utils import (generate_html_table, send_email, handle_file_response, 
+                            is_valid_date, get_next_valid_trading_datetime)
 from queries import get_mail_template, get_holidays_for_year, get_exception_trading_dates_to_year
 
 
@@ -811,6 +812,7 @@ def get_commentry(index_futures, index_participent_ce, index_participent_pe,  in
 
     return html_commentry
 
+
 def create_html_table_with_predefined_html(df_dict_list, extra_table_data, commentry):
     # Ensure the list contains exactly 6 dictionaries
     if len(df_dict_list) != 6:
@@ -1042,6 +1044,7 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
 
     return True
 
+
 def daily_runner():
     last_processed_date = None
 
@@ -1051,7 +1054,7 @@ def daily_runner():
         start_time = now.replace(hour=16, minute=0, second=0, microsecond=0)
         end_time = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
-        if start_time <= now <= end_time and today_str != last_processed_date:
+        if start_time <= now <= end_time and today_str != last_processed_date and is_valid_date(now):
             print(f"Running process for {today_str}")
             try:
                 result = loop_question_between_times()
@@ -1061,7 +1064,11 @@ def daily_runner():
                 print(f"Error processing data for {today_str}: {e}")
         else:
             print(f"Waiting... ({now.strftime('%H:%M:%S')})")
-        time.sleep(3600) # seconds
+        
+        next_run_time = get_next_valid_trading_datetime(now)
+        sleep_duration = (next_run_time - datetime.now()).total_seconds()
+        print(f"Sleeping for {int(sleep_duration)} seconds until {next_run_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        time.sleep(sleep_duration)
 
 
 if __name__ == "__main__":
