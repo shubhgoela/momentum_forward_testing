@@ -450,7 +450,7 @@ def handle_file_response(response, date, logger):
     
 
 def get_next_valid_trading_datetime(current_datetime):
-    next_date = current_datetime + timedelta(days=1)
+    next_date = current_datetime
     while not is_valid_date(next_date):
         next_date += timedelta(days=1)
     return next_date.replace(hour=16, minute=0, second=0, microsecond=0)
