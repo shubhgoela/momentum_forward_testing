@@ -1065,7 +1065,7 @@ def daily_runner():
         else:
             print(f"Waiting... ({now.strftime('%H:%M:%S')})")
         
-        next_run_time = get_next_valid_trading_datetime(now)
+        next_run_time = get_next_valid_trading_datetime(now + timedelta(days=1))
         sleep_duration = (next_run_time - datetime.now()).total_seconds()
         print(f"Sleeping for {int(sleep_duration)} seconds until {next_run_time.strftime('%Y-%m-%d %H:%M:%S')}")
         time.sleep(sleep_duration)
