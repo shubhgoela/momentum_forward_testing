@@ -56,7 +56,7 @@ MAIL_RECIPIENTS = ['shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', '
 MAIL_RECIPIENTS_REPORT = ['gaurav.bhandari@mnclgroup.com',
                           'goela.shubh@gmail.com', 'shubh.goela@mnclgroup.com', 'ketan.kaushik@mnclgroup.com', 
                           'ankush.jain1@mnclgroup.com', 'mayank.jain@mnclgroup.com', 'jainankush4u@gmail.com', 
-                          'amit.jain1@mnclgroup.com', 'arpan.shah@mnclgroup.com']
+                          'amit.jain1@mnclgroup.com', 'arpan.shah@mnclgroup.com', 'arpit.jain@mnclgroup.com']
 
 
 def run_terminal_command(command):
@@ -475,7 +475,7 @@ def get_expiry_dates(ref_date=None, weekly_day='Thursday', monthly_day='Thursday
 
         last_expiry = get_prev_trading_day(last_expiry)
 
-        if last_expiry >= ref_date:
+        if last_expiry > ref_date:
             break
         else:
             if month == 12:
@@ -967,16 +967,26 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
         for file in filtered_docs:
             if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
                 response = session.get(file['file_link'])
-                response.raise_for_status()
-                if response.status_code == 200:
-                    current_df = handle_file_response(response, today, logger)
-                    current_df, current_date = process_open_interest_df(current_df)
+                try:
+                    response.raise_for_status()
+                    if response.status_code == 200:
+                        current_df = handle_file_response(response, today, logger)
+                        current_df, current_date = process_open_interest_df(current_df)
+                except Exception as e:
+                    current_df = None
+                    print(f"Error processing current OI file: {e}")
+                    continue
             
             if file['display_name'] == 'F&O-UDiFF Common Bhavcopy Final (zip)':
                 response = session.get(file['file_link'])
-                response.raise_for_status()
-                if response.status_code == 200:
-                    curr_fo_bhav = handle_file_response(response, today, logger)
+                try:
+                    response.raise_for_status()
+                    if response.status_code == 200:
+                        curr_fo_bhav = handle_file_response(response, today, logger)
+                except Exception as e:
+                    curr_fo_bhav = None
+                    print(f"Error processing current F&O Bhavcopy file: {e}")
+                    continue
 
             if current_df is not None and curr_fo_bhav is not None:
                 break
@@ -986,11 +996,16 @@ def loop_question_between_times(start_time="00:00", end_time="23:00", interval=6
         for file in fd:
             if file['display_name'] == 'F&O-Participant wise Open Interest (csv)':
                 response = session.get(file['file_link'])
-                response.raise_for_status()
-                if response.status_code == 200:
-                    prev_df = handle_file_response(response, today, logger)
-                    prev_df, prev_date = process_open_interest_df(prev_df)
-                    break
+                try:
+                    response.raise_for_status()
+                    if response.status_code == 200:
+                        prev_df = handle_file_response(response, today, logger)
+                        prev_df, prev_date = process_open_interest_df(prev_df)
+                        break
+                except Exception as e:
+                    prev_df = None
+                    print(f"Error processing previous OI file: {e}")
+                    continue
         
         if current_df is not None and prev_df is not None:
             break
