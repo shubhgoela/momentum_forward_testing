@@ -16,7 +16,6 @@ else:
     print("No .env file found")
 
 NSE_base_url = os.getenv('NSE_base_url')
-INDEX_LIST = os.getenv('INDEX_LIST').split(',')
 
 def read_data(csv):
     df = pd.read_csv(csv, parse_dates=['Date'])

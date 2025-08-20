@@ -57,8 +57,8 @@ def get_stock_price(symbol, target_datetime, exchange='NSE', max_iterations = 10
 #     # print(df.loc[df['stocks'] == symbol, 'entry_price'].iloc[0])
 #     return df.loc[df['stocks'] == symbol, 'entry_price'].iloc[0]
 
-# today = datetime(year=2025, month=3, day=3)
+# today = datetime(year=2025, month=8, day=1)
 # order_placement_datetime = datetime.combine(today.date(), time(hour=10, minute=0, second=0))
 # print(order_placement_datetime)
-# price = get_stock_price(symbol="RELIANCE", target_datetime=order_placement_datetime)
+# price = get_stock_price(symbol="KFINTECH", target_datetime=order_placement_datetime)
 # print(price)

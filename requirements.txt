@@ -6,9 +6,11 @@ beautifulsoup4==4.12.3
 Brotli==1.1.0
 certifi==2025.1.31
 cffi==1.17.1
+chardet==5.2.0
 charset-normalizer==3.3.2
 comm==0.2.2
 cssselect2==0.7.0
+curl_cffi==0.12.0
 dateutils==0.6.12
 debugpy==1.8.6
 decorator==5.1.1
@@ -49,6 +51,7 @@ pexpect==4.9.0
 pillow==11.1.0
 platformdirs==4.3.6
 prompt_toolkit==3.0.48
+protobuf==6.31.1
 psutil==6.0.0
 ptyprocess==0.7.0
 pure_eval==0.2.3
@@ -58,13 +61,14 @@ pyee==11.1.1
 Pygments==2.18.0
 pymongo==4.10.1
 pyphen==0.17.2
-pyppeteer==2.0.0
+pyppeteer
 PySocks==1.7.1
 python-dateutil==2.9.0.post0
 python-decouple==3.8
 python-dotenv==1.0.1
 pytz==2024.2
 pyzmq==26.2.0
+reportlab==4.3.1
 requests==2.32.3
 scipy==1.15.1
 selenium==4.25.0
@@ -89,9 +93,9 @@ weasyprint==64.0
 webdriver-manager==4.0.2
 webencodings==0.5.1
 websocket-client==1.8.0
-websockets==10.4
+websockets
 wsproto==1.2.0
 xlrd==2.0.1
-yfinance==0.2.51
+yfinance
 zipp==3.21.0
 zopfli==0.2.3.post1
